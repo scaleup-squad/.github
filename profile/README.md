@@ -9,8 +9,6 @@
 | [growthmaker-dashboard](https://github.com/scaleup-squad/growthmaker-dashboard) | 마케팅 분석 대시보드 (Frontend) | Next.js, TypeScript, Tailwind |
 | [growthmaker-backend](https://github.com/scaleup-squad/growthmaker-backend) | 대시보드 API 서버 | Node.js, Express |
 | [growthmaker-ai](https://github.com/scaleup-squad/growthmaker-ai) | AI 분석 엔진 | Python |
-| [gos-data-api](https://github.com/scaleup-squad/gos-data-api) | 데이터 수집 API | - |
-| [gos-service-api](https://github.com/scaleup-squad/gos-service-api) | 서비스 API | - |
 
 ## 📚 Documentation
 
