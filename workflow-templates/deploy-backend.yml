@@ -1,123 +1,100 @@
 # Backend Deployment Workflow Template
-# 이 파일을 프로젝트의 .github/workflows/ 폴더에 복사하여 사용하세요.
+# growthmaker-backend에서 사용 중인 실제 워크플로우 구조
 
-name: Deploy Backend
+name: Deploy Backend (dev/stage/prod)
 
 on:
   push:
-    branches: [develop, staging, main]
-  pull_request:
-    branches: [develop, staging, main]
+    branches:
+      - develop
+      - staging
+      - main
+
+concurrency:
+  group: ${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
+  APP_NAME: growthmaker-backend
 
 jobs:
-  lint-and-test:
-    name: Lint & Test
+  deploy-dev:
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Run ESLint
-        run: npm run lint
-
-      - name: Run tests
-        run: npm test --passWithNoTests
+        run: bun install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: bun run build
 
-  deploy-dev:
-    name: Deploy to Development
-    needs: lint-and-test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    steps:
-      - name: Deploy to EC2 (Dev)
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Deploy to DEV
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.DEV_DEPLOY_HOST }}
           username: ${{ secrets.DEV_DEPLOY_USER }}
           key: ${{ secrets.DEV_DEPLOY_KEY }}
           script: |
-            set -e
-            echo "🚀 Deploying to Development..."
+            ~/deploy-growthmaker-backend.sh dev
 
-            cd /var/www/growthmaker-backend
-            git fetch origin
-            git checkout develop
-            git pull origin develop
-
-            npm ci --production
-            npm run build
-
-            pm2 restart growthmaker-dev --update-env || pm2 start ecosystem.config.js --env development
-
-            echo "✅ Development deployment completed!"
-
-  deploy-staging:
-    name: Deploy to Staging
-    needs: lint-and-test
+  deploy-stage:
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     steps:
-      - name: Deploy to EC2 (Staging)
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Deploy to STAGE
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.STAGE_DEPLOY_HOST }}
           username: ${{ secrets.STAGE_DEPLOY_USER }}
           key: ${{ secrets.STAGE_DEPLOY_KEY }}
           script: |
-            set -e
-            echo "🚀 Deploying to Staging..."
+            ~/deploy-growthmaker-backend.sh stage
 
-            cd /var/www/growthmaker-backend
-            git fetch origin
-            git checkout staging
-            git pull origin staging
-
-            npm ci --production
-            npm run build
-
-            pm2 restart growthmaker-staging --update-env || pm2 start ecosystem.config.js --env staging
-
-            echo "✅ Staging deployment completed!"
-
-  deploy-production:
-    name: Deploy to Production
-    needs: lint-and-test
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Deploy to EC2 (Production)
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Deploy to PROD
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.PROD_DEPLOY_HOST }}
           username: ${{ secrets.PROD_DEPLOY_USER }}
           key: ${{ secrets.PROD_DEPLOY_KEY }}
           script: |
-            set -e
-            echo "🚀 Deploying to Production..."
-
-            cd /var/www/growthmaker-backend
-            git fetch origin
-            git checkout main
-            git pull origin main
-
-            npm ci --production
-            npm run build
-
-            pm2 restart growthmaker-prod --update-env || pm2 start ecosystem.config.js --env production
-
-            echo "✅ Production deployment completed!"
+            ~/deploy-growthmaker-backend.sh prod

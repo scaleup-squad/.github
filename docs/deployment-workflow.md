@@ -31,9 +31,9 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 │  push to branch                                               │
 │       │                                                       │
 │       ▼                                                       │
-│  ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐   │
-│  │  Lint   │ → │  Test   │ → │  Build  │ → │ Deploy  │   │
-│  └─────────┘    └─────────┘    └─────────┘    └─────────┘   │
+│  ┌─────────┐    ┌─────────┐    ┌─────────────────────────┐   │
+│  │ Install │ → │  Build  │ → │ Deploy (SSH to EC2)     │   │
+│  └─────────┘    └─────────┘    └─────────────────────────┘   │
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -42,9 +42,15 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 
 ## Frontend 배포 (Vercel)
 
-### 방법 1: Vercel 자동 배포 (권장)
+### Vercel 자동 배포 (현재 사용 중)
 
 Vercel은 GitHub 연동 시 자동으로 브랜치별 배포를 수행합니다.
+
+| 브랜치 | 배포 환경 | 도메인 |
+|--------|-----------|--------|
+| `develop` | Preview | Vercel Preview URL |
+| `staging` | Preview | Vercel Preview URL |
+| `main` | Production | `app.growthmaker.kr` |
 
 **설정 방법:**
 
@@ -53,197 +59,158 @@ Vercel은 GitHub 연동 시 자동으로 브랜치별 배포를 수행합니다.
 3. 환경 변수 설정 (Settings > Environment Variables)
 4. 브랜치별 도메인 설정 (Settings > Domains)
 
-### 방법 2: GitHub Actions로 배포
-
-더 세밀한 제어가 필요한 경우:
-
-```yaml
-# .github/workflows/deploy-frontend.yml
-name: Deploy Frontend
-
-on:
-  push:
-    branches: [develop, staging, main]
-
-jobs:
-  lint-and-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run lint
-        run: npm run lint
-
-      - name: Run type check
-        run: npm run type-check
-
-      - name: Run tests
-        run: npm test --passWithNoTests
-
-  deploy:
-    needs: lint-and-test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
-```
-
 ---
 
 ## Backend 배포 (AWS EC2)
 
-### GitHub Actions Workflow
+### 현재 사용 중인 워크플로우
+
+**런타임**: Bun
+**배포 방식**: EC2에서 배포 스크립트 실행
 
 ```yaml
-# .github/workflows/deploy-backend.yml
-name: Deploy Backend
+# .github/workflows/deploy.yml
+name: Deploy growthmaker-backend (dev/stage/prod)
 
 on:
   push:
-    branches: [develop, staging, main]
+    branches:
+      - develop
+      - staging
+      - main
+
+concurrency:
+  group: growthmaker-backend-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
+  APP_NAME: growthmaker-backend
 
 jobs:
-  lint-and-test:
+  deploy-dev:
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          bun-version: latest
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
-      - name: Run lint
-        run: npm run lint
+      - name: Build
+        run: bun run build
 
-      - name: Run tests
-        run: npm test --passWithNoTests
+      - name: Deploy to DEV
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.DEV_DEPLOY_HOST }}
+          username: ${{ secrets.DEV_DEPLOY_USER }}
+          key: ${{ secrets.DEV_DEPLOY_KEY }}
+          script: |
+            ~/deploy-growthmaker-backend.sh dev
 
-  deploy:
-    needs: lint-and-test
+  deploy-stage:
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Set deployment environment
-        id: env
-        run: |
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "environment=production" >> $GITHUB_OUTPUT
-            echo "host=${{ secrets.EC2_HOST_PROD }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
-            echo "environment=staging" >> $GITHUB_OUTPUT
-            echo "host=${{ secrets.EC2_HOST_STAGING }}" >> $GITHUB_OUTPUT
-          else
-            echo "environment=development" >> $GITHUB_OUTPUT
-            echo "host=${{ secrets.EC2_HOST_DEV }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          host: ${{ steps.env.outputs.host }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Deploy to STAGE
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGE_DEPLOY_HOST }}
+          username: ${{ secrets.STAGE_DEPLOY_USER }}
+          key: ${{ secrets.STAGE_DEPLOY_KEY }}
           script: |
-            cd /var/www/growthmaker-backend
+            ~/deploy-growthmaker-backend.sh stage
 
-            # Git pull
-            git fetch origin
-            git checkout ${{ github.ref_name }}
-            git pull origin ${{ github.ref_name }}
+  deploy-prod:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            # Install dependencies
-            npm ci --production
-
-            # Build
-            npm run build
-
-            # Restart PM2
-            pm2 restart growthmaker-${{ steps.env.outputs.environment }} --update-env
-
-            # Health check
-            sleep 5
-            curl -f http://localhost:3000/health || exit 1
-
-      - name: Notify on failure
-        if: failure()
-        uses: 8398a7/action-slack@v3
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          status: failure
-          text: '배포 실패: ${{ steps.env.outputs.environment }}'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Deploy to PROD
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.PROD_DEPLOY_HOST }}
+          username: ${{ secrets.PROD_DEPLOY_USER }}
+          key: ${{ secrets.PROD_DEPLOY_KEY }}
+          script: |
+            ~/deploy-growthmaker-backend.sh prod
 ```
 
-### EC2 초기 설정 스크립트
+### EC2 배포 스크립트
+
+EC2에 `~/deploy-growthmaker-backend.sh` 스크립트가 설치되어 있어야 합니다.
 
 ```bash
 #!/bin/bash
-# setup-ec2.sh - EC2 초기 설정
+# ~/deploy-growthmaker-backend.sh
 
-# Node.js 설치 (nvm 사용)
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-source ~/.bashrc
-nvm install 20
-nvm use 20
+ENV=$1  # dev, stage, prod
 
-# PM2 설치
-npm install -g pm2
+cd /var/www/growthmaker-backend
 
-# 프로젝트 클론
-cd /var/www
-git clone git@github.com:scaleup-squad/growthmaker-backend.git
-cd growthmaker-backend
+# Git pull
+git fetch origin
+if [ "$ENV" == "dev" ]; then
+  git checkout develop
+  git pull origin develop
+elif [ "$ENV" == "stage" ]; then
+  git checkout staging
+  git pull origin staging
+else
+  git checkout main
+  git pull origin main
+fi
 
-# 환경 변수 설정
-cp .env.example .env
-# .env 파일 편집
+# Install & Build
+bun install --frozen-lockfile
+bun run build
 
-# 의존성 설치 및 빌드
-npm ci
-npm run build
+# Restart PM2
+pm2 restart growthmaker-$ENV --update-env
 
-# PM2로 시작
-pm2 start ecosystem.config.js --env production
-pm2 save
-pm2 startup
+echo "✅ Deployed to $ENV"
 ```
 
 ---
 
 ## GitHub Secrets 설정
 
-### Frontend (Vercel)
+### Frontend (Vercel) - 현재 미사용
 
-| Secret 이름 | 설명 | 획득 방법 |
-|-------------|------|-----------|
-| `VERCEL_TOKEN` | Vercel API 토큰 | Vercel > Settings > Tokens |
-| `VERCEL_ORG_ID` | Vercel 팀 ID | Vercel > Settings > General |
-| `VERCEL_PROJECT_ID` | 프로젝트 ID | .vercel/project.json 또는 Dashboard |
+Vercel 자동 배포를 사용 중이므로 별도 Secrets 불필요
 
 ### Backend (AWS EC2)
 
@@ -253,17 +220,11 @@ pm2 startup
 | Staging | `STAGE_DEPLOY_HOST` | `STAGE_DEPLOY_USER` | `STAGE_DEPLOY_KEY` |
 | Production | `PROD_DEPLOY_HOST` | `PROD_DEPLOY_USER` | `PROD_DEPLOY_KEY` |
 
-| Secret | 설명 | 예시 |
-|--------|------|------|
-| `*_DEPLOY_HOST` | EC2 IP 또는 도메인 | `15.165.206.67` |
+| Secret | 설명 | 현재 값 |
+|--------|------|---------|
+| `*_DEPLOY_HOST` | EC2 IP | `15.165.206.67` |
 | `*_DEPLOY_USER` | SSH 사용자명 | `ec2-user` |
 | `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem 파일 내용) | `-----BEGIN RSA...` |
-
-### 공통
-
-| Secret 이름 | 설명 |
-|-------------|------|
-| `SLACK_WEBHOOK_URL` | Slack 알림용 Webhook URL |
 
 ### Secrets 설정 방법
 
@@ -277,7 +238,7 @@ pm2 startup
 
 ### 배포 전
 
-- [ ] 로컬에서 빌드 테스트 완료
+- [ ] 로컬에서 빌드 테스트 완료 (`bun run build`)
 - [ ] 테스트 통과 확인
 - [ ] 환경 변수 설정 확인
 - [ ] 마이그레이션 필요 여부 확인
@@ -293,7 +254,7 @@ pm2 startup
 - [ ] `develop` → `staging` PR 생성
 - [ ] 변경 사항 리뷰
 - [ ] PR 머지
-- [ ] Staging 환경에서 QA 테스트
+- [ ] Staging 환경에서 QA 테스트 (`api.growthmaker.kr/stage`)
 
 ### Production 배포
 
@@ -301,7 +262,7 @@ pm2 startup
 - [ ] 최종 변경 사항 리뷰
 - [ ] 팀 승인 획득
 - [ ] PR 머지
-- [ ] Production 환경 모니터링
+- [ ] Production 환경 모니터링 (`api.growthmaker.kr`)
 - [ ] 롤백 계획 준비
 
 ### 배포 후
@@ -329,7 +290,7 @@ vercel rollback
 
 ```bash
 # SSH로 EC2 접속
-ssh -i key.pem ubuntu@api.example.com
+ssh -i key.pem ec2-user@15.165.206.67
 
 # 이전 커밋으로 롤백
 cd /var/www/growthmaker-backend
@@ -337,9 +298,9 @@ git log --oneline -10  # 롤백할 커밋 확인
 git checkout <commit-hash>
 
 # 재빌드 및 재시작
-npm ci
-npm run build
-pm2 restart growthmaker-production
+bun install --frozen-lockfile
+bun run build
+pm2 restart growthmaker-prod
 ```
 
 ---
@@ -353,7 +314,7 @@ pm2 restart growthmaker-production
 | 에러 추적 | Sentry |
 | 로그 관리 | AWS CloudWatch |
 | 성능 모니터링 | Vercel Analytics, PM2 |
-| 알림 | Slack, Discord |
+| 알림 | Slack |
 
 ### PM2 모니터링 명령어
 
@@ -362,7 +323,7 @@ pm2 restart growthmaker-production
 pm2 status
 
 # 로그 확인
-pm2 logs growthmaker-production
+pm2 logs growthmaker-prod
 
 # 모니터링 대시보드
 pm2 monit
@@ -370,5 +331,5 @@ pm2 monit
 
 ---
 
-**문서 버전**: 1.0
+**문서 버전**: 1.1
 **최종 수정**: 2025-01-22
