@@ -1,11 +1,16 @@
 # Backend Deployment Workflow Template
 # growthmaker-backend에서 사용 중인 실제 워크플로우
-# 브랜치: develop → dev, staging → stage, main → prod
+# PR: test 실행, Push: test 통과 후 배포
 
 name: Deploy growthmaker-backend (dev/stage/prod)
 
 on:
   push:
+    branches:
+      - develop
+      - staging
+      - main
+  pull_request:
     branches:
       - develop
       - staging
@@ -19,8 +24,30 @@ env:
   APP_NAME: growthmaker-backend
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type Check
+        run: bun run typecheck
+
+      - name: Test
+        run: bun run test:run
+
   deploy-dev:
-    if: github.ref == 'refs/heads/develop'
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
 
     steps:
@@ -48,7 +75,8 @@ jobs:
             ~/deploy-growthmaker-backend.sh dev
 
   deploy-stage:
-    if: github.ref == 'refs/heads/staging'
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
 
     steps:
@@ -76,7 +104,8 @@ jobs:
             ~/deploy-growthmaker-backend.sh stage
 
   deploy-prod:
-    if: github.ref == 'refs/heads/main'
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:

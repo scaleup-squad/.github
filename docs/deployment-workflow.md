@@ -5,6 +5,7 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 ## 목차
 
 - [개요](#개요)
+- [CI 파이프라인](#ci-파이프라인)
 - [Frontend 배포 (Vercel)](#frontend-배포-vercel)
 - [Backend 배포 (AWS EC2)](#backend-배포-aws-ec2)
 - [GitHub Secrets 설정](#github-secrets-설정)
@@ -36,6 +37,51 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 │  └─────────┘    └─────────┘    └─────────────────────────┘   │
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## CI 파이프라인
+
+모든 PR과 push에서 자동으로 코드 품질 검사가 실행됩니다.
+
+### Frontend (Dashboard)
+
+```yaml
+jobs:
+  lint-and-test:
+    steps:
+      - npm ci
+      - npm run lint        # ESLint
+      - npm run type-check  # TypeScript
+      - npm run test:run    # Vitest
+```
+
+### Backend
+
+```yaml
+jobs:
+  test:
+    steps:
+      - bun install --frozen-lockfile
+      - bun run typecheck   # TypeScript
+      - bun run test:run    # Vitest
+```
+
+### CI 흐름
+
+```
+PR 생성 / Push
+      │
+      ▼
+┌─────────────┐
+│ lint & test │ ─── 실패 시 배포 중단
+└─────────────┘
+      │ 성공
+      ▼
+┌─────────────┐
+│   deploy    │ ─── push 이벤트에서만 실행
+└─────────────┘
 ```
 
 ---
@@ -375,5 +421,5 @@ pm2 monit                     # 모니터링 대시보드
 
 ---
 
-**문서 버전**: 1.3
+**문서 버전**: 1.4
 **최종 수정**: 2026-01-22
