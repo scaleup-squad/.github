@@ -32,7 +32,7 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 │       │                                                       │
 │       ▼                                                       │
 │  ┌─────────┐    ┌─────────┐    ┌─────────────────────────┐   │
-│  │ Install │ → │  Build  │ → │ Deploy (SSH to EC2)     │   │
+│  │ Install │ → │  Build  │ → │ Deploy                   │   │
 │  └─────────┘    └─────────┘    └─────────────────────────┘   │
 │                                                               │
 └──────────────────────────────────────────────────────────────┘
@@ -42,22 +42,68 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 
 ## Frontend 배포 (Vercel)
 
-### Vercel 자동 배포 (현재 사용 중)
+### 현재 사용 중인 워크플로우
 
-Vercel은 GitHub 연동 시 자동으로 브랜치별 배포를 수행합니다.
+**방식**: GitHub Actions + Vercel CLI
 
-| 브랜치 | 배포 환경 | 도메인 |
-|--------|-----------|--------|
-| `develop` | Preview | Vercel Preview URL |
-| `staging` | Preview | Vercel Preview URL |
-| `main` | Production | `app.growthmaker.kr` |
+```yaml
+# .github/workflows/vercel-deploy.yml
+name: Vercel CI/CD (main→production · staging→staging · develop→preview)
 
-**설정 방법:**
+on:
+  push:
+    branches: [main, staging, develop]
 
-1. Vercel Dashboard에서 프로젝트 Import
-2. GitHub 레포지토리 연결
-3. 환경 변수 설정 (Settings > Environment Variables)
-4. 브랜치별 도메인 설정 (Settings > Domains)
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: true
+
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (for CLI only)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Deploy to Vercel
+        id: vercel
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            npx vercel@latest pull --yes --environment=production --token="${{ env.VERCEL_TOKEN }}"
+            npx vercel@latest build --prod --token="${{ env.VERCEL_TOKEN }}"
+            URL=$(npx vercel@latest deploy --prebuilt --prod --yes --token="${{ env.VERCEL_TOKEN }}")
+            echo "DEPLOY_ENV=Production" >> "$GITHUB_ENV"
+          elif [ "${{ github.ref_name }}" = "staging" ]; then
+            npx vercel@latest pull --yes --environment=preview --token="${{ env.VERCEL_TOKEN }}"
+            npx vercel@latest build --token="${{ env.VERCEL_TOKEN }}"
+            URL=$(npx vercel@latest deploy --prebuilt --yes --token="${{ env.VERCEL_TOKEN }}")
+            echo "DEPLOY_ENV=Staging" >> "$GITHUB_ENV"
+          else
+            npx vercel@latest pull --yes --environment=preview --token="${{ env.VERCEL_TOKEN }}"
+            npx vercel@latest build --token="${{ env.VERCEL_TOKEN }}"
+            URL=$(npx vercel@latest deploy --prebuilt --yes --token="${{ env.VERCEL_TOKEN }}")
+            echo "DEPLOY_ENV=Preview" >> "$GITHUB_ENV"
+          fi
+          echo "DEPLOY_URL=$URL" >> "$GITHUB_ENV"
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "### ✅ Vercel Deploy"
+          echo "- Environment: ${DEPLOY_ENV}"
+          echo "- URL: ${DEPLOY_URL}"
+```
 
 ---
 
@@ -208,11 +254,15 @@ echo "✅ Deployed to $ENV"
 
 ## GitHub Secrets 설정
 
-### Frontend (Vercel) - 현재 미사용
+### Frontend (Dashboard)
 
-Vercel 자동 배포를 사용 중이므로 별도 Secrets 불필요
+| Secret | 설명 | 획득 방법 |
+|--------|------|-----------|
+| `VERCEL_ORG_ID` | Vercel Organization ID | Vercel > Settings > General |
+| `VERCEL_PROJECT_ID` | Vercel Project ID | `.vercel/project.json` 또는 Dashboard |
+| `VERCEL_TOKEN` | Vercel API Token | Vercel > Settings > Tokens |
 
-### Backend (AWS EC2)
+### Backend
 
 | 환경 | HOST | USER | KEY |
 |------|------|------|-----|
@@ -220,11 +270,11 @@ Vercel 자동 배포를 사용 중이므로 별도 Secrets 불필요
 | Staging | `STAGE_DEPLOY_HOST` | `STAGE_DEPLOY_USER` | `STAGE_DEPLOY_KEY` |
 | Production | `PROD_DEPLOY_HOST` | `PROD_DEPLOY_USER` | `PROD_DEPLOY_KEY` |
 
-| Secret | 설명 | 현재 값 |
-|--------|------|---------|
-| `*_DEPLOY_HOST` | EC2 IP | `15.165.206.67` |
-| `*_DEPLOY_USER` | SSH 사용자명 | `ec2-user` |
-| `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem 파일 내용) | `-----BEGIN RSA...` |
+| Secret | 현재 값 |
+|--------|---------|
+| `*_DEPLOY_HOST` | `15.165.206.67` |
+| `*_DEPLOY_USER` | `ec2-user` |
+| `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem 파일 내용) |
 
 ### Secrets 설정 방법
 
@@ -238,7 +288,7 @@ Vercel 자동 배포를 사용 중이므로 별도 Secrets 불필요
 
 ### 배포 전
 
-- [ ] 로컬에서 빌드 테스트 완료 (`bun run build`)
+- [ ] 로컬에서 빌드 테스트 완료
 - [ ] 테스트 통과 확인
 - [ ] 환경 변수 설정 확인
 - [ ] 마이그레이션 필요 여부 확인
@@ -254,7 +304,7 @@ Vercel 자동 배포를 사용 중이므로 별도 Secrets 불필요
 - [ ] `develop` → `staging` PR 생성
 - [ ] 변경 사항 리뷰
 - [ ] PR 머지
-- [ ] Staging 환경에서 QA 테스트 (`api.growthmaker.kr/stage`)
+- [ ] Staging 환경에서 QA 테스트
 
 ### Production 배포
 
@@ -262,15 +312,8 @@ Vercel 자동 배포를 사용 중이므로 별도 Secrets 불필요
 - [ ] 최종 변경 사항 리뷰
 - [ ] 팀 승인 획득
 - [ ] PR 머지
-- [ ] Production 환경 모니터링 (`api.growthmaker.kr`)
+- [ ] Production 환경 모니터링
 - [ ] 롤백 계획 준비
-
-### 배포 후
-
-- [ ] 헬스체크 확인
-- [ ] 주요 기능 스모크 테스트
-- [ ] 에러 로그 모니터링
-- [ ] 성능 지표 확인
 
 ---
 
@@ -307,29 +350,15 @@ pm2 restart growthmaker-prod
 
 ## 모니터링
 
-### 권장 도구
-
-| 용도 | 도구 |
-|------|------|
-| 에러 추적 | Sentry |
-| 로그 관리 | AWS CloudWatch |
-| 성능 모니터링 | Vercel Analytics, PM2 |
-| 알림 | Slack |
-
-### PM2 모니터링 명령어
+### PM2 명령어
 
 ```bash
-# 상태 확인
-pm2 status
-
-# 로그 확인
-pm2 logs growthmaker-prod
-
-# 모니터링 대시보드
-pm2 monit
+pm2 status                    # 상태 확인
+pm2 logs growthmaker-prod     # 로그 확인
+pm2 monit                     # 모니터링 대시보드
 ```
 
 ---
 
-**문서 버전**: 1.1
+**문서 버전**: 1.2
 **최종 수정**: 2025-01-22

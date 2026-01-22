@@ -8,7 +8,7 @@
 - [아키텍처](#아키텍처)
 - [환경별 구성](#환경별-구성)
 - [환경 변수 설정](#환경-변수-설정)
-- [Supabase 환경 분리](#supabase-환경-분리)
+- [Supabase 설정](#supabase-설정)
 - [도메인 구성](#도메인-구성)
 
 ---
@@ -23,7 +23,7 @@
 | **Staging** | QA 및 배포 전 검증 | 개발자, QA |
 | **Production** | 실 서비스 운영 | 최종 사용자 |
 
-### 환경별 브랜치 매핑
+### 브랜치 전략
 
 ```
 main (prod)     ← Production 배포
@@ -34,6 +34,15 @@ develop         ← Development 배포
      ↑
 feature/*       ← 기능 개발
 ```
+
+| Repository | 브랜치 | 배포 환경 |
+|------------|--------|-----------|
+| Dashboard | `main` | Production |
+| Dashboard | `staging` | Staging |
+| Dashboard | `develop` | Development (Preview) |
+| Backend | `main` | Production |
+| Backend | `staging` | Staging |
+| Backend | `develop` | Development |
 
 ---
 
@@ -47,7 +56,7 @@ feature/*       ← 기능 개발
 │                        (Vercel)                              │
 │  ┌─────────────────────────────────┐  ┌─────────────┐       │
 │  │  Preview (develop/staging)      │  │ Production  │       │
-│  │  app.growthmaker.kr (Preview)   │  │   (main)    │       │
+│  │                                 │  │   (main)    │       │
 │  └──────────────┬──────────────────┘  └──────┬──────┘       │
 └─────────────────┼────────────────────────────┼──────────────┘
                   │                            │
@@ -72,29 +81,27 @@ feature/*       ← 기능 개발
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 향후 목표 구성 (환경 완전 분리)
-
-```
-Frontend (Vercel)     Backend (AWS EC2)      Database (Supabase)
-─────────────────     ─────────────────      ───────────────────
-develop (Preview)  →  api-dev.xxx.kr      →  growthmaker-dev
-staging (Preview)  →  api-staging.xxx.kr  →  growthmaker-staging
-main (Production)  →  api.xxx.kr          →  growthmaker-prod
-```
-
 ---
 
 ## 환경별 구성
 
 ### Frontend (Vercel)
 
-**단일 프로젝트 + 브랜치별 배포 방식 사용**
+**GitHub Actions + Vercel CLI 배포 방식 사용**
 
 | 브랜치 | Vercel 환경 | 비고 |
 |--------|-------------|------|
 | `develop` | Preview | 개발 테스트 |
 | `staging` | Preview | QA 테스트 |
-| `main` | Production | 실 서비스 |
+| `main` | Production | 실 서비스 (`app.growthmaker.kr`) |
+
+#### GitHub Secrets (Dashboard)
+
+| Secret | 설명 |
+|--------|------|
+| `VERCEL_ORG_ID` | Vercel Organization ID |
+| `VERCEL_PROJECT_ID` | Vercel Project ID |
+| `VERCEL_TOKEN` | Vercel API Token |
 
 #### Vercel 환경 변수 현황
 
@@ -111,50 +118,29 @@ main (Production)  →  api.xxx.kr          →  growthmaker-prod
 
 ### Backend (AWS EC2)
 
-#### 현재 구성: 경로 기반 분리
+**Bun 런타임 + EC2 배포 스크립트 방식 사용**
 
-| 환경 | API Endpoint |
-|------|--------------|
-| Staging | `https://api.growthmaker.kr/stage` |
-| Production | `https://api.growthmaker.kr` |
+#### 현재 구성: 단일 EC2 + 경로 기반 분리
 
-#### 향후 구성: 환경별 EC2 인스턴스 분리 (권장)
+| 환경 | API Endpoint | EC2 |
+|------|--------------|-----|
+| Development | `https://api.growthmaker.kr/dev` | 15.165.206.67 |
+| Staging | `https://api.growthmaker.kr/stage` | 15.165.206.67 |
+| Production | `https://api.growthmaker.kr` | 15.165.206.67 |
 
-| 환경 | 인스턴스 타입 | 도메인 |
-|------|---------------|--------|
-| Development | t3.micro | `api-dev.growthmaker.kr` |
-| Staging | t3.small | `api-staging.growthmaker.kr` |
-| Production | t3.medium+ | `api.growthmaker.kr` |
+#### GitHub Secrets (Backend)
 
-#### PM2 프로세스 관리
+| 환경 | HOST | USER | KEY |
+|------|------|------|-----|
+| Development | `DEV_DEPLOY_HOST` | `DEV_DEPLOY_USER` | `DEV_DEPLOY_KEY` |
+| Staging | `STAGE_DEPLOY_HOST` | `STAGE_DEPLOY_USER` | `STAGE_DEPLOY_KEY` |
+| Production | `PROD_DEPLOY_HOST` | `PROD_DEPLOY_USER` | `PROD_DEPLOY_KEY` |
 
-```bash
-# ecosystem.config.js
-module.exports = {
-  apps: [{
-    name: 'growthmaker-api',
-    script: 'dist/main.js',
-    instances: 'max',
-    exec_mode: 'cluster',
-    env_development: {
-      NODE_ENV: 'development'
-    },
-    env_staging: {
-      NODE_ENV: 'staging'
-    },
-    env_production: {
-      NODE_ENV: 'production'
-    }
-  }]
-};
-```
-
-```bash
-# 환경별 실행
-pm2 start ecosystem.config.js --env development
-pm2 start ecosystem.config.js --env staging
-pm2 start ecosystem.config.js --env production
-```
+| Secret | 현재 값 |
+|--------|---------|
+| `*_DEPLOY_HOST` | `15.165.206.67` |
+| `*_DEPLOY_USER` | `ec2-user` |
+| `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem) |
 
 ---
 
@@ -168,7 +154,7 @@ growthmaker-dashboard/
 ├── .env.example            # 환경 변수 템플릿 (git에 포함)
 ```
 
-#### .env.example (템플릿)
+#### .env.example
 
 ```bash
 # App
@@ -194,63 +180,21 @@ growthmaker-backend/
 ├── .env.example            # 템플릿
 ```
 
-#### .env.example (Backend)
-
-```bash
-# Server
-NODE_ENV=development
-PORT=3000
-
-# Supabase
-SUPABASE_URL=https://sssfkmjaoqkltwoaipbc.supabase.co
-SUPABASE_SERVICE_KEY=your_service_key
-
-# CORS
-CORS_ORIGIN=https://app.growthmaker.kr
-
-# Optional
-SLACK_WEBHOOK_URL=
-LOG_LEVEL=debug
-```
-
 ---
 
-## Supabase 환경 분리
+## Supabase 설정
 
 ### 현재 상태: 단일 프로젝트
 
-| 환경 | 프로젝트 | 용도 |
-|------|----------|------|
-| 모든 환경 | `sssfkmjaoqkltwoaipbc` | 개발/스테이징/프로덕션 공유 |
+| 환경 | 프로젝트 | URL |
+|------|----------|-----|
+| 모든 환경 | `sssfkmjaoqkltwoaipbc` | `https://sssfkmjaoqkltwoaipbc.supabase.co` |
 
 > ⚠️ **주의**: 현재 모든 환경에서 동일한 Supabase 프로젝트를 사용 중입니다.
-> 스테이징에서의 테스트 데이터가 프로덕션에 영향을 줄 수 있습니다.
-
-### 향후 목표: 환경별 분리
-
-| 환경 | 프로젝트 이름 | 용도 |
-|------|---------------|------|
-| Development | `growthmaker-dev` | 개발/테스트 데이터 |
-| Staging | `growthmaker-staging` | QA 테스트 데이터 |
-| Production | `growthmaker-prod` | 실 서비스 데이터 |
-
-### 마이그레이션 적용 순서 (환경 분리 시)
-
-```bash
-# 1. Development에 먼저 적용
-supabase db push --project-ref <dev-project-ref>
-
-# 2. 테스트 후 Staging에 적용
-supabase db push --project-ref <staging-project-ref>
-
-# 3. 최종 검증 후 Production에 적용 (신중하게!)
-supabase db push --project-ref <prod-project-ref>
-```
 
 ### 타입 생성
 
 ```bash
-# 타입 생성 (현재 단일 프로젝트)
 npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/database.types.ts
 ```
 
@@ -262,15 +206,8 @@ npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/
 
 | 서비스 | Staging | Production |
 |--------|---------|------------|
-| Frontend | Preview URL (Vercel) | `app.growthmaker.kr` |
+| Frontend | Vercel Preview URL | `app.growthmaker.kr` |
 | API | `api.growthmaker.kr/stage` | `api.growthmaker.kr` |
-
-### 향후 도메인 구조 (권장)
-
-| 서비스 | Development | Staging | Production |
-|--------|-------------|---------|------------|
-| Frontend | `dev.growthmaker.kr` | `staging.growthmaker.kr` | `app.growthmaker.kr` |
-| API | `api-dev.growthmaker.kr` | `api-staging.growthmaker.kr` | `api.growthmaker.kr` |
 
 ---
 
@@ -281,5 +218,5 @@ npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/
 
 ---
 
-**문서 버전**: 1.1
+**문서 버전**: 1.2
 **최종 수정**: 2025-01-22
