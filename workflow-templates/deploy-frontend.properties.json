@@ -1,0 +1,6 @@
+{
+  "name": "Deploy Frontend to Vercel",
+  "description": "Lint, test, and deploy Next.js frontend to Vercel with environment-specific configuration",
+  "iconName": "vercel",
+  "categories": ["Deployment", "Frontend"]
+}

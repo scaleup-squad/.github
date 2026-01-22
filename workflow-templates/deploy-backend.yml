@@ -1,0 +1,111 @@
+# Backend Deployment Workflow Template
+# 이 파일을 각 프로젝트의 .github/workflows/ 폴더에 복사하여 사용하세요.
+
+name: Deploy Backend
+
+on:
+  push:
+    branches: [develop, staging, main]
+  pull_request:
+    branches: [develop, staging, main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test --passWithNoTests
+
+      - name: Build
+        run: npm run build
+
+  deploy:
+    name: Deploy to EC2
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set deployment environment
+        id: env
+        run: |
+          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.EC2_HOST_PROD }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.EC2_HOST_STAGING }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=development" >> $GITHUB_OUTPUT
+            echo "host=${{ secrets.EC2_HOST_DEV }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ steps.env.outputs.host }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            APP_DIR="/var/www/growthmaker-backend"
+            ENV="${{ steps.env.outputs.environment }}"
+            BRANCH="${{ github.ref_name }}"
+
+            echo "🚀 Deploying to $ENV environment..."
+
+            cd $APP_DIR
+
+            # Fetch and checkout
+            git fetch origin
+            git checkout $BRANCH
+            git pull origin $BRANCH
+
+            # Install dependencies
+            echo "📦 Installing dependencies..."
+            npm ci --production
+
+            # Build
+            echo "🔨 Building..."
+            npm run build
+
+            # Restart with PM2
+            echo "🔄 Restarting application..."
+            pm2 restart growthmaker-$ENV --update-env
+
+            # Health check
+            echo "🏥 Running health check..."
+            sleep 5
+            curl -sf http://localhost:3000/health || exit 1
+
+            echo "✅ Deployment completed successfully!"
+
+      - name: Notify Success
+        if: success()
+        run: echo "✅ Deployed to ${{ steps.env.outputs.environment }}"
+
+      - name: Notify Failure
+        if: failure()
+        run: echo "❌ Deployment failed for ${{ steps.env.outputs.environment }}"

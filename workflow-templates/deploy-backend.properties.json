@@ -1,0 +1,6 @@
+{
+  "name": "Deploy Backend to AWS EC2",
+  "description": "Lint, test, build, and deploy Node.js backend to AWS EC2 with PM2",
+  "iconName": "aws",
+  "categories": ["Deployment", "Backend"]
+}
