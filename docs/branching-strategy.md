@@ -245,11 +245,45 @@ git fetch --prune
 
 ---
 
+## 코드 리뷰 규칙
+
+### CODEOWNERS
+
+PR 생성 시 자동으로 리뷰어가 지정됩니다.
+
+```
+# .github/CODEOWNERS
+* @Growthmaker-kr @yhpark-growthmaker
+```
+
+### 팀 규칙 (Branch Protection 대체)
+
+> GitHub Free 플랜에서는 Private 레포지토리에 Branch Protection Rules를 사용할 수 없습니다.
+> 아래 규칙을 팀원 간 합의로 준수합니다.
+
+| 규칙 | 설명 |
+|------|------|
+| **main/staging 직접 푸시 금지** | 반드시 PR을 통해 머지 |
+| **PR 리뷰 필수** | 최소 1명 이상의 승인 후 머지 |
+| **Force Push 금지** | main, staging, develop 브랜치에 force push 금지 |
+| **테스트 통과 확인** | 머지 전 CI 통과 확인 |
+
+### PR 체크리스트
+
+머지 전 확인사항:
+
+- [ ] CI/CD 파이프라인 통과
+- [ ] 최소 1명 이상의 리뷰어 승인
+- [ ] 코드 충돌 해결 완료
+- [ ] 불필요한 console.log 제거
+
+---
+
 ## 다음 단계
 
 - [배포 워크플로우](./deployment-workflow.md) - CI/CD 파이프라인 설정
 
 ---
 
-**문서 버전**: 1.0
-**최종 수정**: 2025-01-22
+**문서 버전**: 1.1
+**최종 수정**: 2026-01-22
