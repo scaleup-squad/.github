@@ -39,35 +39,47 @@ feature/*       ← 기능 개발
 
 ## 아키텍처
 
+### 현재 구성
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        Frontend                              │
 │                        (Vercel)                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │     Dev     │  │   Staging   │  │ Production  │          │
-│  │   Preview   │  │   Preview   │  │    Prod     │          │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
-└─────────┼────────────────┼────────────────┼─────────────────┘
-          │                │                │
-          ▼                ▼                ▼
+│  ┌─────────────────────────────────┐  ┌─────────────┐       │
+│  │  Preview (develop/staging)      │  │ Production  │       │
+│  │  app.growthmaker.kr (Preview)   │  │   (main)    │       │
+│  └──────────────┬──────────────────┘  └──────┬──────┘       │
+└─────────────────┼────────────────────────────┼──────────────┘
+                  │                            │
+                  ▼                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                        Backend                               │
 │                       (AWS EC2)                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │   Dev EC2   │  │ Staging EC2 │  │  Prod EC2   │          │
-│  │   :3001     │  │   :3001     │  │   :3001     │          │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
-└─────────┼────────────────┼────────────────┼─────────────────┘
-          │                │                │
-          ▼                ▼                ▼
+│  ┌─────────────────────────────────┐  ┌─────────────┐       │
+│  │  api.growthmaker.kr/stage       │  │   (prod)    │       │
+│  │  (Staging API)                  │  │ api.grow... │       │
+│  └──────────────┬──────────────────┘  └──────┬──────┘       │
+└─────────────────┼────────────────────────────┼──────────────┘
+                  │                            │
+                  ▼                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                       Database                               │
 │                      (Supabase)                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │     Dev     │  │   Staging   │  │ Production  │          │
-│  │   Project   │  │   Project   │  │   Project   │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘          │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │  sssfkmjaoqkltwoaipbc.supabase.co               │        │
+│  │  (단일 프로젝트 - 모든 환경 공유)                  │        │
+│  └─────────────────────────────────────────────────┘        │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### 향후 목표 구성 (환경 완전 분리)
+
+```
+Frontend (Vercel)     Backend (AWS EC2)      Database (Supabase)
+─────────────────     ─────────────────      ───────────────────
+develop (Preview)  →  api-dev.xxx.kr      →  growthmaker-dev
+staging (Preview)  →  api-staging.xxx.kr  →  growthmaker-staging
+main (Production)  →  api.xxx.kr          →  growthmaker-prod
 ```
 
 ---
@@ -78,166 +90,43 @@ feature/*       ← 기능 개발
 
 **단일 프로젝트 + 브랜치별 배포 방식 사용**
 
-| 브랜치 | Vercel 환경 | 도메인 |
-|--------|-------------|--------|
-| `develop` | Preview | `dev.example.com` |
-| `staging` | Preview | `staging.example.com` |
-| `main` | Production | `example.com` |
+| 브랜치 | Vercel 환경 | 비고 |
+|--------|-------------|------|
+| `develop` | Preview | 개발 테스트 |
+| `staging` | Preview | QA 테스트 |
+| `main` | Production | 실 서비스 |
 
-#### vercel.json 설정
+#### Vercel 환경 변수 현황
 
-```json
-{
-  "git": {
-    "deploymentEnabled": {
-      "main": true,
-      "staging": true,
-      "develop": true
-    }
-  }
-}
-```
-
-#### Vercel 환경 변수 설정
-
-Vercel Dashboard > Settings > Environment Variables에서 설정:
-
-| 변수명 | Development | Preview (staging) | Production |
-|--------|-------------|-------------------|------------|
-| `NEXT_PUBLIC_ENV` | `development` | `staging` | `production` |
-| `NEXT_PUBLIC_API_URL` | dev API URL | staging API URL | prod API URL |
-| `NEXT_PUBLIC_SUPABASE_URL` | dev Supabase | staging Supabase | prod Supabase |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | dev key | staging key | prod key |
-
-> **참고**: Preview 환경에서 staging 브랜치를 구분하려면 Vercel의 "Git Branch" 조건을 사용하여 환경 변수를 오버라이드합니다.
+| 변수명 | Production | Preview | 비고 |
+|--------|------------|---------|------|
+| `NEXT_PUBLIC_API_URL` | `https://api.growthmaker.kr` | `https://api.growthmaker.kr/stage` | 환경별 분리 |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://sssfkmjaoqkltwoaipbc.supabase.co` | 동일 | 단일 프로젝트 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All Environments | - | 단일 프로젝트 |
+| `SUPABASE_SERVICE_ROLE_KEY` | All Environments | - | 단일 프로젝트 |
+| `NEXT_PUBLIC_BASE_URL` | `https://app.growthmaker.kr` | 동일 | - |
+| `SLACK_WEBHOOK_URL` | All Environments | - | 알림용 |
 
 ---
 
 ### Backend (AWS EC2)
 
-#### 옵션 1: 환경별 EC2 인스턴스 분리 (권장)
+#### 현재 구성: 경로 기반 분리
+
+| 환경 | API Endpoint |
+|------|--------------|
+| Staging | `https://api.growthmaker.kr/stage` |
+| Production | `https://api.growthmaker.kr` |
+
+#### 향후 구성: 환경별 EC2 인스턴스 분리 (권장)
 
 | 환경 | 인스턴스 타입 | 도메인 |
 |------|---------------|--------|
-| Development | t3.micro | `api-dev.example.com` |
-| Staging | t3.small | `api-staging.example.com` |
-| Production | t3.medium+ | `api.example.com` |
+| Development | t3.micro | `api-dev.growthmaker.kr` |
+| Staging | t3.small | `api-staging.growthmaker.kr` |
+| Production | t3.medium+ | `api.growthmaker.kr` |
 
-#### 옵션 2: 단일 EC2 + Docker Compose (비용 절감)
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-
-services:
-  backend-dev:
-    build: .
-    ports:
-      - "3001:3000"
-    env_file:
-      - .env.development
-    restart: unless-stopped
-
-  backend-staging:
-    build: .
-    ports:
-      - "3002:3000"
-    env_file:
-      - .env.staging
-    restart: unless-stopped
-
-  backend-prod:
-    build: .
-    ports:
-      - "3003:3000"
-    env_file:
-      - .env.production
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl:/etc/nginx/ssl
-    depends_on:
-      - backend-dev
-      - backend-staging
-      - backend-prod
-    restart: unless-stopped
-```
-
-#### Nginx 설정 (옵션 2용)
-
-```nginx
-# nginx/nginx.conf
-events {
-    worker_connections 1024;
-}
-
-http {
-    upstream backend-dev {
-        server backend-dev:3000;
-    }
-
-    upstream backend-staging {
-        server backend-staging:3000;
-    }
-
-    upstream backend-prod {
-        server backend-prod:3000;
-    }
-
-    server {
-        listen 80;
-        server_name api-dev.example.com;
-
-        location / {
-            proxy_pass http://backend-dev;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_cache_bypass $http_upgrade;
-        }
-    }
-
-    server {
-        listen 80;
-        server_name api-staging.example.com;
-
-        location / {
-            proxy_pass http://backend-staging;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_cache_bypass $http_upgrade;
-        }
-    }
-
-    server {
-        listen 80;
-        server_name api.example.com;
-
-        location / {
-            proxy_pass http://backend-prod;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_cache_bypass $http_upgrade;
-        }
-    }
-}
-```
-
-#### PM2 프로세스 관리 (EC2 분리 시)
+#### PM2 프로세스 관리
 
 ```bash
 # ecosystem.config.js
@@ -276,47 +165,25 @@ pm2 start ecosystem.config.js --env production
 ```
 growthmaker-dashboard/
 ├── .env.local              # 로컬 개발용 (gitignore)
-├── .env.development        # dev 환경 기본값
 ├── .env.example            # 환경 변수 템플릿 (git에 포함)
 ```
 
 #### .env.example (템플릿)
 
 ```bash
-# Environment
-NEXT_PUBLIC_ENV=development
+# App
+NEXT_PUBLIC_BASE_URL=https://app.growthmaker.kr
 
 # API
-NEXT_PUBLIC_API_URL=https://api-dev.example.com
+NEXT_PUBLIC_API_URL=https://api.growthmaker.kr
 
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_URL=https://sssfkmjaoqkltwoaipbc.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# Optional
-NEXT_PUBLIC_SENTRY_DSN=
-```
-
-#### 환경별 설정 예시
-
-```bash
-# .env.development
-NEXT_PUBLIC_ENV=development
-NEXT_PUBLIC_API_URL=https://api-dev.growthmaker.com
-NEXT_PUBLIC_SUPABASE_URL=https://xxx-dev.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=dev_anon_key
-
-# Vercel에서 staging 환경 변수 (Dashboard에서 설정)
-NEXT_PUBLIC_ENV=staging
-NEXT_PUBLIC_API_URL=https://api-staging.growthmaker.com
-NEXT_PUBLIC_SUPABASE_URL=https://xxx-staging.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=staging_anon_key
-
-# Vercel에서 production 환경 변수 (Dashboard에서 설정)
-NEXT_PUBLIC_ENV=production
-NEXT_PUBLIC_API_URL=https://api.growthmaker.com
-NEXT_PUBLIC_SUPABASE_URL=https://xxx-prod.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=prod_anon_key
+# Notifications
+SLACK_WEBHOOK_URL=your_slack_webhook_url
 ```
 
 ### Backend (.env 파일 구조)
@@ -324,9 +191,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=prod_anon_key
 ```
 growthmaker-backend/
 ├── .env                    # 로컬 개발용 (gitignore)
-├── .env.development        # dev 환경
-├── .env.staging            # staging 환경
-├── .env.production         # production 환경
 ├── .env.example            # 템플릿
 ```
 
@@ -338,14 +202,14 @@ NODE_ENV=development
 PORT=3000
 
 # Supabase
-SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_URL=https://sssfkmjaoqkltwoaipbc.supabase.co
 SUPABASE_SERVICE_KEY=your_service_key
 
 # CORS
-CORS_ORIGIN=https://dev.example.com
+CORS_ORIGIN=https://app.growthmaker.kr
 
 # Optional
-SENTRY_DSN=
+SLACK_WEBHOOK_URL=
 LOG_LEVEL=debug
 ```
 
@@ -353,7 +217,16 @@ LOG_LEVEL=debug
 
 ## Supabase 환경 분리
 
-### 프로젝트 구성
+### 현재 상태: 단일 프로젝트
+
+| 환경 | 프로젝트 | 용도 |
+|------|----------|------|
+| 모든 환경 | `sssfkmjaoqkltwoaipbc` | 개발/스테이징/프로덕션 공유 |
+
+> ⚠️ **주의**: 현재 모든 환경에서 동일한 Supabase 프로젝트를 사용 중입니다.
+> 스테이징에서의 테스트 데이터가 프로덕션에 영향을 줄 수 있습니다.
+
+### 향후 목표: 환경별 분리
 
 | 환경 | 프로젝트 이름 | 용도 |
 |------|---------------|------|
@@ -361,7 +234,7 @@ LOG_LEVEL=debug
 | Staging | `growthmaker-staging` | QA 테스트 데이터 |
 | Production | `growthmaker-prod` | 실 서비스 데이터 |
 
-### 마이그레이션 적용 순서
+### 마이그레이션 적용 순서 (환경 분리 시)
 
 ```bash
 # 1. Development에 먼저 적용
@@ -377,34 +250,27 @@ supabase db push --project-ref <prod-project-ref>
 ### 타입 생성
 
 ```bash
-# 각 환경별로 타입 생성 (보통 prod 기준으로 생성)
-npx supabase gen types typescript --project-id <project-ref> > src/types/database.types.ts
+# 타입 생성 (현재 단일 프로젝트)
+npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/database.types.ts
 ```
 
 ---
 
 ## 도메인 구성
 
-### 예시 도메인 구조
+### 현재 도메인 구조
+
+| 서비스 | Staging | Production |
+|--------|---------|------------|
+| Frontend | Preview URL (Vercel) | `app.growthmaker.kr` |
+| API | `api.growthmaker.kr/stage` | `api.growthmaker.kr` |
+
+### 향후 도메인 구조 (권장)
 
 | 서비스 | Development | Staging | Production |
 |--------|-------------|---------|------------|
-| Frontend | dev.growthmaker.com | staging.growthmaker.com | growthmaker.com |
-| API | api-dev.growthmaker.com | api-staging.growthmaker.com | api.growthmaker.com |
-
-### DNS 설정
-
-```
-# Vercel (Frontend)
-dev.growthmaker.com      → CNAME cname.vercel-dns.com
-staging.growthmaker.com  → CNAME cname.vercel-dns.com
-growthmaker.com          → A 76.76.19.19
-
-# AWS EC2 (Backend)
-api-dev.growthmaker.com      → A <dev-ec2-ip>
-api-staging.growthmaker.com  → A <staging-ec2-ip>
-api.growthmaker.com          → A <prod-ec2-ip>
-```
+| Frontend | `dev.growthmaker.kr` | `staging.growthmaker.kr` | `app.growthmaker.kr` |
+| API | `api-dev.growthmaker.kr` | `api-staging.growthmaker.kr` | `api.growthmaker.kr` |
 
 ---
 
@@ -415,5 +281,5 @@ api.growthmaker.com          → A <prod-ec2-ip>
 
 ---
 
-**문서 버전**: 1.0
+**문서 버전**: 1.1
 **최종 수정**: 2025-01-22
