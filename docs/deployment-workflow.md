@@ -247,13 +247,17 @@ pm2 startup
 
 ### Backend (AWS EC2)
 
-| Secret 이름 | 설명 | 예시 |
-|-------------|------|------|
-| `EC2_HOST_DEV` | Dev EC2 IP/도메인 | `api-dev.example.com` |
-| `EC2_HOST_STAGING` | Staging EC2 IP/도메인 | `api-staging.example.com` |
-| `EC2_HOST_PROD` | Prod EC2 IP/도메인 | `api.example.com` |
-| `EC2_USERNAME` | SSH 사용자명 | `ubuntu` 또는 `ec2-user` |
-| `EC2_SSH_KEY` | SSH 프라이빗 키 | `~/.ssh/id_rsa` 내용 |
+| 환경 | HOST | USER | KEY |
+|------|------|------|-----|
+| Development | `DEV_DEPLOY_HOST` | `DEV_DEPLOY_USER` | `DEV_DEPLOY_KEY` |
+| Staging | `STAGE_DEPLOY_HOST` | `STAGE_DEPLOY_USER` | `STAGE_DEPLOY_KEY` |
+| Production | `PROD_DEPLOY_HOST` | `PROD_DEPLOY_USER` | `PROD_DEPLOY_KEY` |
+
+| Secret | 설명 | 예시 |
+|--------|------|------|
+| `*_DEPLOY_HOST` | EC2 IP 또는 도메인 | `15.165.206.67` |
+| `*_DEPLOY_USER` | SSH 사용자명 | `ec2-user` |
+| `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem 파일 내용) | `-----BEGIN RSA...` |
 
 ### 공통
 

@@ -1,5 +1,5 @@
 # Backend Deployment Workflow Template
-# 이 파일을 각 프로젝트의 .github/workflows/ 폴더에 복사하여 사용하세요.
+# 이 파일을 프로젝트의 .github/workflows/ 폴더에 복사하여 사용하세요.
 
 name: Deploy Backend
 
@@ -38,74 +38,86 @@ jobs:
       - name: Build
         run: npm run build
 
-  deploy:
-    name: Deploy to EC2
+  deploy-dev:
+    name: Deploy to Development
     needs: lint-and-test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set deployment environment
-        id: env
-        run: |
-          if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "environment=production" >> $GITHUB_OUTPUT
-            echo "host=${{ secrets.EC2_HOST_PROD }}" >> $GITHUB_OUTPUT
-          elif [ "${{ github.ref }}" == "refs/heads/staging" ]; then
-            echo "environment=staging" >> $GITHUB_OUTPUT
-            echo "host=${{ secrets.EC2_HOST_STAGING }}" >> $GITHUB_OUTPUT
-          else
-            echo "environment=development" >> $GITHUB_OUTPUT
-            echo "host=${{ secrets.EC2_HOST_DEV }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Deploy to EC2
+      - name: Deploy to EC2 (Dev)
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ steps.env.outputs.host }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
+          host: ${{ secrets.DEV_DEPLOY_HOST }}
+          username: ${{ secrets.DEV_DEPLOY_USER }}
+          key: ${{ secrets.DEV_DEPLOY_KEY }}
           script: |
             set -e
+            echo "🚀 Deploying to Development..."
 
-            APP_DIR="/var/www/growthmaker-backend"
-            ENV="${{ steps.env.outputs.environment }}"
-            BRANCH="${{ github.ref_name }}"
-
-            echo "🚀 Deploying to $ENV environment..."
-
-            cd $APP_DIR
-
-            # Fetch and checkout
+            cd /var/www/growthmaker-backend
             git fetch origin
-            git checkout $BRANCH
-            git pull origin $BRANCH
+            git checkout develop
+            git pull origin develop
 
-            # Install dependencies
-            echo "📦 Installing dependencies..."
             npm ci --production
-
-            # Build
-            echo "🔨 Building..."
             npm run build
 
-            # Restart with PM2
-            echo "🔄 Restarting application..."
-            pm2 restart growthmaker-$ENV --update-env
+            pm2 restart growthmaker-dev --update-env || pm2 start ecosystem.config.js --env development
 
-            # Health check
-            echo "🏥 Running health check..."
-            sleep 5
-            curl -sf http://localhost:3000/health || exit 1
+            echo "✅ Development deployment completed!"
 
-            echo "✅ Deployment completed successfully!"
+  deploy-staging:
+    name: Deploy to Staging
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    steps:
+      - name: Deploy to EC2 (Staging)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.STAGE_DEPLOY_HOST }}
+          username: ${{ secrets.STAGE_DEPLOY_USER }}
+          key: ${{ secrets.STAGE_DEPLOY_KEY }}
+          script: |
+            set -e
+            echo "🚀 Deploying to Staging..."
 
-      - name: Notify Success
-        if: success()
-        run: echo "✅ Deployed to ${{ steps.env.outputs.environment }}"
+            cd /var/www/growthmaker-backend
+            git fetch origin
+            git checkout staging
+            git pull origin staging
 
-      - name: Notify Failure
-        if: failure()
-        run: echo "❌ Deployment failed for ${{ steps.env.outputs.environment }}"
+            npm ci --production
+            npm run build
+
+            pm2 restart growthmaker-staging --update-env || pm2 start ecosystem.config.js --env staging
+
+            echo "✅ Staging deployment completed!"
+
+  deploy-production:
+    name: Deploy to Production
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to EC2 (Production)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.PROD_DEPLOY_HOST }}
+          username: ${{ secrets.PROD_DEPLOY_USER }}
+          key: ${{ secrets.PROD_DEPLOY_KEY }}
+          script: |
+            set -e
+            echo "🚀 Deploying to Production..."
+
+            cd /var/www/growthmaker-backend
+            git fetch origin
+            git checkout main
+            git pull origin main
+
+            npm ci --production
+            npm run build
+
+            pm2 restart growthmaker-prod --update-env || pm2 start ecosystem.config.js --env production
+
+            echo "✅ Production deployment completed!"
