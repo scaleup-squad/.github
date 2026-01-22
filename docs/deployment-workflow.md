@@ -357,7 +357,7 @@ pm2 restart growthmaker-prod
 | growthmaker-dashboard | `main` | Production | ✅ 성공 |
 | growthmaker-dashboard | `staging` | Staging | ✅ 성공 |
 | growthmaker-dashboard | `develop` | Preview | ✅ 성공 |
-| growthmaker-backend | `main` | Production | - |
+| growthmaker-backend | `main` | Production | ✅ 성공 |
 | growthmaker-backend | `staging` | Staging | ✅ 성공 |
 | growthmaker-backend | `develop` | Development | ✅ 성공 |
 
