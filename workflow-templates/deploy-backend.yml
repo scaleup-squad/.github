@@ -1,7 +1,8 @@
 # Backend Deployment Workflow Template
-# growthmaker-backend에서 사용 중인 실제 워크플로우 구조
+# growthmaker-backend에서 사용 중인 실제 워크플로우
+# 브랜치: develop → dev, staging → stage, main → prod
 
-name: Deploy Backend (dev/stage/prod)
+name: Deploy growthmaker-backend (dev/stage/prod)
 
 on:
   push:
@@ -11,7 +12,7 @@ on:
       - main
 
 concurrency:
-  group: ${{ github.repository }}-${{ github.ref }}
+  group: growthmaker-backend-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -21,6 +22,7 @@ jobs:
   deploy-dev:
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,6 +50,7 @@ jobs:
   deploy-stage:
     if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,6 +78,7 @@ jobs:
   deploy-prod:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

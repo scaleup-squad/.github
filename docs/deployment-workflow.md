@@ -348,6 +348,21 @@ pm2 restart growthmaker-prod
 
 ---
 
+## CI/CD 파이프라인 상태
+
+### 테스트 완료 (2026-01-22)
+
+| Repository | 브랜치 | 환경 | 상태 |
+|------------|--------|------|------|
+| growthmaker-dashboard | `main` | Production | ✅ 성공 |
+| growthmaker-dashboard | `staging` | Staging | ✅ 성공 |
+| growthmaker-dashboard | `develop` | Preview | ✅ 성공 |
+| growthmaker-backend | `main` | Production | - |
+| growthmaker-backend | `staging` | Staging | ✅ 성공 |
+| growthmaker-backend | `develop` | Development | ✅ 성공 |
+
+---
+
 ## 모니터링
 
 ### PM2 명령어
@@ -360,5 +375,5 @@ pm2 monit                     # 모니터링 대시보드
 
 ---
 
-**문서 버전**: 1.2
-**최종 수정**: 2025-01-22
+**문서 버전**: 1.3
+**최종 수정**: 2026-01-22

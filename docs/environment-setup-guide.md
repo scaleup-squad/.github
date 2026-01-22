@@ -218,5 +218,5 @@ npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/
 
 ---
 
-**문서 버전**: 1.2
-**최종 수정**: 2025-01-22
+**문서 버전**: 1.3
+**최종 수정**: 2026-01-22
