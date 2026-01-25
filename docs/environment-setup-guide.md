@@ -43,6 +43,8 @@ feature/*       ← 기능 개발
 | Backend | `main` | Production |
 | Backend | `staging` | Staging |
 | Backend | `develop` | Development |
+| AI Service | `main` | Production |
+| AI Service | `staging` | Staging |
 
 ---
 
@@ -58,17 +60,31 @@ feature/*       ← 기능 개발
 │  │  Preview (develop/staging)      │  │ Production  │       │
 │  │                                 │  │   (main)    │       │
 │  └──────────────┬──────────────────┘  └──────┬──────┘       │
+│                 │  app.growthmaker.kr        │              │
 └─────────────────┼────────────────────────────┼──────────────┘
                   │                            │
                   ▼                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                        Backend                               │
 │                       (AWS EC2)                              │
-│  ┌─────────────────────────────────┐  ┌─────────────┐       │
-│  │  api.growthmaker.kr/stage       │  │   (prod)    │       │
-│  │  (Staging API)                  │  │ api.grow... │       │
-│  └──────────────┬──────────────────┘  └──────┬──────┘       │
-└─────────────────┼────────────────────────────┼──────────────┘
+│                   api.growthmaker.kr                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
+│  │    /dev     │  │   /stage    │  │     /       │          │
+│  │   (8801)    │  │   (8802)    │  │   (8800)    │          │
+│  └─────────────┘  └─────────────┘  └─────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+                  │                            │
+                  ▼                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      AI Service                              │
+│                  (AWS EC2 - Docker)                          │
+│                   api.growthmaker.kr                         │
+│  ┌─────────────────────────┐  ┌─────────────────────────┐   │
+│  │      /ai-stage          │  │         /ai             │   │
+│  │       (8001)            │  │        (8000)           │   │
+│  │   growthmaker-ai-stg    │  │    growthmaker-ai       │   │
+│  └─────────────────────────┘  └─────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
                   │                            │
                   ▼                            ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -108,6 +124,7 @@ feature/*       ← 기능 개발
 | 변수명 | Production | Preview | 비고 |
 |--------|------------|---------|------|
 | `NEXT_PUBLIC_API_URL` | `https://api.growthmaker.kr` | `https://api.growthmaker.kr/stage` | 환경별 분리 |
+| `NEXT_PUBLIC_AI_API_URL` | `https://api.growthmaker.kr/ai` | `https://api.growthmaker.kr/ai-stage` | AI 서비스 |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://sssfkmjaoqkltwoaipbc.supabase.co` | 동일 | 단일 프로젝트 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All Environments | - | 단일 프로젝트 |
 | `SUPABASE_SERVICE_ROLE_KEY` | All Environments | - | 단일 프로젝트 |
@@ -122,11 +139,11 @@ feature/*       ← 기능 개발
 
 #### 현재 구성: 단일 EC2 + 경로 기반 분리
 
-| 환경 | API Endpoint | EC2 |
-|------|--------------|-----|
-| Development | `https://api.growthmaker.kr/dev` | 15.165.206.67 |
-| Staging | `https://api.growthmaker.kr/stage` | 15.165.206.67 |
-| Production | `https://api.growthmaker.kr` | 15.165.206.67 |
+| 환경 | API Endpoint | 포트 |
+|------|--------------|------|
+| Development | `https://api.growthmaker.kr/dev` | 8801 |
+| Staging | `https://api.growthmaker.kr/stage` | 8802 |
+| Production | `https://api.growthmaker.kr` | 8800 |
 
 #### GitHub Secrets (Backend)
 
@@ -141,6 +158,42 @@ feature/*       ← 기능 개발
 | `*_DEPLOY_HOST` | `15.165.206.67` |
 | `*_DEPLOY_USER` | `ec2-user` |
 | `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem) |
+
+---
+
+### AI Service (AWS EC2 - Docker)
+
+**Docker + GHCR 방식 사용**
+
+#### 현재 구성: 단일 EC2 + Docker Compose
+
+| 환경 | API Endpoint | 포트 | 컨테이너 |
+|------|--------------|------|----------|
+| Staging | `https://api.growthmaker.kr/ai-stage` | 8001 | growthmaker-ai-staging |
+| Production | `https://api.growthmaker.kr/ai` | 8000 | growthmaker-ai |
+
+#### GitHub Secrets (AI Service)
+
+| Secret | 설명 | 현재 값 |
+|--------|------|---------|
+| `DEPLOY_HOST` | EC2 IP | `15.165.206.67` |
+| `DEPLOY_USER` | SSH 사용자명 | `ec2-user` |
+| `DEPLOY_SSH_KEY` | SSH 프라이빗 키 | pem 파일 내용 |
+| `DEPLOY_PATH` | 배포 경로 | `/var/www/growthmaker-ai` |
+| `GHCR_PAT` | GHCR 인증 토큰 | PAT (read:packages) |
+
+#### EC2 디렉토리 구조
+
+```
+/var/www/
+├── growthmaker-ai/              # Production
+│   ├── docker-compose.yml
+│   └── .env
+├── growthmaker-ai-staging/      # Staging
+│   ├── docker-compose.yml
+│   └── .env
+└── growthmaker-backend/         # Backend (PM2)
+```
 
 ---
 
@@ -162,6 +215,7 @@ NEXT_PUBLIC_BASE_URL=https://app.growthmaker.kr
 
 # API
 NEXT_PUBLIC_API_URL=https://api.growthmaker.kr
+NEXT_PUBLIC_AI_API_URL=https://api.growthmaker.kr/ai
 
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=https://sssfkmjaoqkltwoaipbc.supabase.co
@@ -178,6 +232,18 @@ SLACK_WEBHOOK_URL=your_slack_webhook_url
 growthmaker-backend/
 ├── .env                    # 로컬 개발용 (gitignore)
 ├── .env.example            # 템플릿
+```
+
+### AI Service (.env 파일 구조)
+
+```
+growthmaker-ai/
+├── .env                    # Production 환경 변수
+└── docker-compose.yml
+
+growthmaker-ai-staging/
+├── .env                    # Staging 환경 변수
+└── docker-compose.yml
 ```
 
 ---
@@ -207,7 +273,65 @@ npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/
 | 서비스 | Staging | Production |
 |--------|---------|------------|
 | Frontend | Vercel Preview URL | `app.growthmaker.kr` |
-| API | `api.growthmaker.kr/stage` | `api.growthmaker.kr` |
+| Backend API | `api.growthmaker.kr/stage` | `api.growthmaker.kr` |
+| AI API | `api.growthmaker.kr/ai-stage` | `api.growthmaker.kr/ai` |
+
+### Nginx 설정 (EC2)
+
+```nginx
+server {
+    server_name api.growthmaker.kr;
+
+    # AI Service - Production
+    location /ai/ {
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    # AI Service - Staging
+    location /ai-stage/ {
+        proxy_pass http://127.0.0.1:8001;
+    }
+
+    # Backend - Dev
+    location /dev/ {
+        proxy_pass http://127.0.0.1:8801;
+    }
+
+    # Backend - Stage
+    location /stage/ {
+        proxy_pass http://127.0.0.1:8802;
+    }
+
+    # Backend - Production
+    location / {
+        proxy_pass http://127.0.0.1:8800;
+    }
+
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/api.growthmaker.kr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.growthmaker.kr/privkey.pem;
+}
+```
+
+---
+
+## 서비스 상태 확인
+
+### Health Check URLs
+
+| 서비스 | 환경 | URL |
+|--------|------|-----|
+| Backend | Production | `https://api.growthmaker.kr/health` |
+| Backend | Staging | `https://api.growthmaker.kr/stage/health` |
+| AI | Production | `https://api.growthmaker.kr/ai/health` |
+| AI | Staging | `https://api.growthmaker.kr/ai-stage/health` |
+
+### Docker 컨테이너 확인
+
+```bash
+ssh ec2-user@15.165.206.67
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
 
 ---
 
@@ -218,5 +342,6 @@ npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/
 
 ---
 
-**문서 버전**: 1.3
-**최종 수정**: 2026-01-22
+**문서 버전**: 1.4
+**최종 수정**: 2026-01-24
+**Project**: GrowthMaker
