@@ -1,0 +1,123 @@
+name: Release PR (reusable)
+
+# staging → main 반영 PR 을 사람이 매번 만들지 않아도 되게 한다(gos-harness #9).
+# 각 레포의 .github/workflows/release-pr.yml(staging 푸시 트리거)이 이 워크플로를 부른다 — 로직은 여기 한 벌.
+# 반영 PR 을 열거나(없을 때) 제목·본문만 갱신한다(있을 때) — 레포당 항상 1개.
+# PR 의 head 가 staging 브랜치 자체라 커밋은 GitHub 이 알아서 쌓는다. 여기선 "무엇이 나가는지" 목록만 정리한다.
+# 승인·머지는 그대로 사람(각 레포 main ruleset: 승인 1 + 새 푸시 시 승인 무효화).
+#
+# GitHub App(gos-release-pr) 토큰을 쓰는 이유: 기본 GITHUB_TOKEN 으로 만든 PR 에는 pull_request 워크플로가
+# 돌지 않아 main 필수 검사가 영원히 대기 → 머지 불가.
+# ⚠️ 이 레포는 공개라 다른 레포가 관리자 설정 없이 부를 수 있다 — 비밀값은 여기 두지 말고 호출 측이 넘긴다.
+on:
+  workflow_call:
+    inputs:
+      app-id:
+        description: gos-release-pr App ID (호출 측 vars.RELEASE_APP_ID)
+        type: string
+        required: true
+      migrations-path:
+        description: DB 마이그 디렉터리 — 주면 포함 여부를 본문에 경고. 없는 레포는 비워 둔다
+        type: string
+        default: ''
+    secrets:
+      app-key:
+        description: gos-release-pr App private key (호출 측 secrets.RELEASE_APP_KEY)
+        required: true
+
+permissions: {}
+
+jobs:
+  upsert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    # 비공개 레포 checkout 은 기본 토큰으로 — 읽기만. PR 쓰기는 App 토큰.
+    # App 토큰으로 checkout 하지 않는 이유: PR 쓰기 토큰이 .git/config 에 남고, App 에 contents 권한이 따로 필요해진다.
+    # (호출 측 잡에도 contents: read 가 있어야 한다 — 부른 쪽 권한을 넘을 수 없다)
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app
+        with:
+          app-id: ${{ inputs.app-id }}
+          private-key: ${{ secrets.app-key }}
+
+      - uses: actions/checkout@v4
+        with:
+          # 범위 계산에 커밋·트리만 필요 — 파일 내용(blob)은 받지 않는다
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: 반영 PR 열기·갱신
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          MIGRATIONS_PATH: ${{ inputs.migrations-path }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          RANGE=origin/main..origin/staging
+          # staging 에 들어온 PR 단위 목록. --first-parent 로 staging 자신의 커밋만 본다:
+          #   squash 머지  → 제목 "title (#N)" 그대로
+          #   merge commit → "Merge pull request #N from owner/branch" + 본문 첫 줄(PR 제목) → "title (#N)"
+          #   역반영(from …/main) merge 는 내용이 아니라 제외
+          LIST=$(git log --first-parent --reverse --format='%s%x1f%b%x1e' "$RANGE" | awk '
+            BEGIN { RS = "\036"; FS = "\037" }
+            {
+              s = $1; sub(/^\n+/, "", s)
+              if (s == "") next
+              if (s ~ /^Merge pull request #[0-9]+ from /) {
+                split(s, w, " "); if (w[6] ~ /\/main$/) next
+                split($2, b, "\n"); title = b[1]
+                print (title == "" ? w[6] : title) " (" w[4] ")"
+              } else if (s !~ /^Merge /) print s
+            }')
+          if [ -z "$LIST" ]; then
+            echo "main 에 없는 변경이 없다 — 반영할 것 없음"
+            exit 0
+          fi
+
+          BODY="${RUNNER_TEMP:-/tmp}/release-pr-body.md"
+          {
+            echo "staging → main 반영 PR — staging 푸시 때마다 자동 갱신(release-pr.yml). 승인·머지는 사람이 한다."
+            echo
+            echo "## 이번 반영에 포함된 변경"
+            # staging 안에서 넣었다 되돌린 쌍은 prod 영향이 없으니 '롤백됨'. 비교는 끝의 (#N) 을 떼고 한다 —
+            # merge commit 으로 머지된 Revert 는 제목에 원 PR 번호가 없다.
+            # (짝 없는 Revert = 이미 prod 에 나간 것을 빼는 변경이라 그대로 둔다)
+            printf '%s\n' "$LIST" | awk '
+              function key(x) { sub(/ \(#[0-9]+\)$/, "", x); return x }
+              function target(x) { if (x !~ /^Revert "/) return ""; x = key(x); sub(/^Revert "/, "", x); sub(/"$/, "", x); return key(x) }
+              { line[NR] = $0; has[key($0)] = 1; t = target($0); if (t != "") reverted[t] = 1 }
+              END {
+                for (i = 1; i <= NR; i++) {
+                  s = line[i]; t = target(s)
+                  if ((key(s) in reverted) || (t != "" && (t in has))) print "- ~~" s "~~ (staging 에서 롤백됨)"
+                  else print "- " s
+                }
+              }'
+            # 마이그 경로를 준 레포(backend)만 — DB 스키마가 없는 레포엔 이 구역 자체를 안 쓴다
+            if [ -n "$MIGRATIONS_PATH" ]; then
+              echo
+              MIGS=$(git diff --name-only "$RANGE" -- "$MIGRATIONS_PATH" | sed 's/^/- `/; s/$/`/')
+              if [ -n "$MIGS" ]; then
+                echo "## ⚠️ 마이그레이션 포함 — 머지 시 prod DB 스키마가 바뀐다"
+                echo "$MIGS"
+              else
+                echo "마이그레이션 없음."
+              fi
+            fi
+            echo
+            echo "⚠️ **merge commit 으로 머지**(squash·rebase 금지) — 이력이 갈라져 다음 반영 PR 에 같은 변경이 또 나온다."
+          } > "$BODY"
+
+          # 건수 = 변경 목록 구역에서 롤백되지 않은 줄
+          ACTIVE=$(sed -n '/^## 이번 반영/,/^$/p' "$BODY" | grep -c '^- [^~]' || true)
+          TITLE="release: staging → main (${ACTIVE}건)"
+          NUM=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number // empty')
+          if [ -n "$NUM" ]; then
+            gh pr edit "$NUM" --title "$TITLE" --body-file "$BODY"
+            echo "반영 PR #$NUM 갱신"
+          else
+            gh pr create --base main --head staging --title "$TITLE" --body-file "$BODY"
+          fi
