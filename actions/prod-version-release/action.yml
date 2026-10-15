@@ -1,0 +1,57 @@
+name: prod-version-release
+description: prod 배포·스모크 성공 후 버전 태그 + GitHub Release + Slack 알림 (재배포·롤백은 기존 Release 에 기록만)
+# composite 인 이유는 prod-version-plan 과 같다(잡 추가 과금 없음). 로직은 release.sh / notes.jq.
+# 태그·Release 실패 = 스텝 실패(빨간불). Slack 실패 = 경고만.
+# ⚠️ 이 레포는 공개 — 토큰·채널은 호출 측 secrets/vars 에서 넘긴다.
+inputs:
+  token:
+    description: 대상 레포 contents:write 토큰 (보통 github.token — 잡에 permissions contents:write)
+    required: true
+  sha:
+    description: 배포한 커밋(40자리) — plan 에 준 것과 같아야 한다
+    default: ${{ github.sha }}
+  repository:
+    description: owner/name
+    default: ${{ github.repository }}
+  version:
+    description: plan 의 version
+    default: ''
+  mode:
+    description: plan 의 mode (new | redeploy)
+    required: true
+  previous-tag:
+    description: plan 의 previous-tag
+    default: ''
+  memo-tag:
+    description: plan 의 memo-tag
+    default: ''
+  service:
+    description: 표시 이름 (예 backend)
+    required: true
+  note:
+    description: 자유 메모 (예 "env 변경 재배포") — Release 기록·Slack 에 붙는다
+    default: ''
+  slack-token:
+    description: Slack 봇 토큰(chat:write). 비우면 Slack 은 건너뛴다
+    default: ''
+  slack-channel:
+    description: Slack 채널 ID
+    default: ''
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        SHA: ${{ inputs.sha }}
+        VERSION: ${{ inputs.version }}
+        MODE: ${{ inputs.mode }}
+        PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        MEMO_TAG: ${{ inputs.memo-tag }}
+        SERVICE: ${{ inputs.service }}
+        NOTE: ${{ inputs.note }}
+        SLACK_TOKEN: ${{ inputs.slack-token }}
+        SLACK_CHANNEL: ${{ inputs.slack-channel }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+      run: bash "$GITHUB_ACTION_PATH/release.sh"
