@@ -54,7 +54,7 @@ jobs:
               RANGE="${PR_BASE}..${PR_HEAD}" ;;
             push)
               if [[ "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
-                RANGE="${AFTER} --not --exclude=refs/remotes/origin/${BRANCH} --remotes"
+                RANGE="${AFTER} --not --exclude=origin/${BRANCH} --remotes"
               else
                 RANGE="${BEFORE}..${AFTER}"
               fi ;;
