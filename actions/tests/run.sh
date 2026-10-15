@@ -46,7 +46,13 @@ case "$method $path" in
   *) echo "stub: 모르는 호출 $method $path" >&2; exit 3 ;;
 esac
 STUB
-chmod +x "$WORK/bin/gh"
+# 가짜 curl(Slack): 보낸 페이로드만 기록
+cat > "$WORK/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do [ "$1" = --data ] && printf '%s\n' "$2" >> "$WORK/slack.log"; shift; done
+echo '{"ok":true}'
+STUB
+chmod +x "$WORK/bin/gh" "$WORK/bin/curl"
 export PATH="$WORK/bin:$PATH" WORK
 
 PASS=0 FAIL=0
@@ -216,6 +222,57 @@ eq "rollback: 예전 태그는 Latest 아님" false "$(jq -r .make_latest "$WORK
 out=$(DRY_RUN=1 MODE=new VERSION=v2026.10.15.11 PREVIOUS_TAG=v2026.10.15.10 SLACK_TOKEN=x SLACK_CHANNEL=C1 rel)
 has "slack: 메시지" "prod 배포 완료 — *v2026.10.15.11*" "$out"
 has "dry-run: 쓰기 안 함" "[dry-run] gh api -X POST repos/o/r/git/refs" "$out"
+
+# 입력 형식 검증 — plan 출력 배선 오류로 엉뚱한 태그가 생기지 않게
+set +e
+out=$(MODE=new VERSION=v2026.10.15 rel); rc=$?
+eq "검증: version 형식 밖 → 실패" 1 $rc
+has "검증: 이유" "버전 형식" "$out"
+out=$(MODE=redeploy MEMO_TAG=steps.x.outputs.memo-tag rel); rc=$?
+eq "검증: memo-tag 형식 밖 → 실패" 1 $rc
+out=$(MODE=new VERSION='' rel); rc=$?
+eq "검증: new 인데 version 빈 값 → 실패" 1 $rc
+set -e
+
+# notes.jq: @멘션 무력화
+eq "notes: @멘션은 백틱, 이메일은 그대로" "- thanks \`@kim-1\` \`@o/devs\` a@b.com (#5)" \
+  "$(jq -n '{commits: [{commit: {message: "thanks @kim-1 @o/devs a@b.com (#5)"}, parents: [1]}]}' | jq -rs -f "$ROOT/prod-version-release/notes.jq")"
+
+# ── 5. plan → release 연결(end-to-end) ─────────────────────────────────────────────────────
+# 1차 런이 태그까지 만들고 Release 에서 실패 → "Re-run jobs". plan 은 태그를 보고 redeploy 로 판단하지만
+# release 는 원래 했어야 할 일(PR 목록 Release + :rocket:)을 마저 해야 한다.
+chain() { # plan 출력을 그대로 release 입력으로
+  local p
+  p=$(REPO=o/r SHA=$SHA PV_TODAY=2026.10.15 bash "$ROOT/prod-version-plan/plan.sh" 2>/dev/null)
+  REPO=o/r SHA=$SHA SERVICE=backend RUN_URL=https://run/2 SLACK_TOKEN=x SLACK_CHANNEL=C1 \
+    MODE=$(field mode "$p") VERSION=$(field version "$p") PREVIOUS_TAG=$(field previous-tag "$p") \
+    MEMO_TAG=$(field memo-tag "$p") bash "$ROOT/prod-version-release/release.sh" 2>&1
+}
+: > "$WORK/inputs.log"; : > "$WORK/slack.log"
+out=$(FX_REFS="[$(ref v2026.10.14.3 commit $OLD),$(ref v2026.10.15.1 commit $SHA)]" FX_STATUS=identical chain)
+has "e2e 재실행: 보완 경로" "재실행 보완으로 전체 Release 생성" "$out"
+body=$(jq -r .body "$WORK/inputs.log")
+has "e2e 재실행: 앞 태그 기준 PR 목록" "## 포함된 변경 (v2026.10.14.3 이후)" "$body"
+has "e2e 재실행: PR 줄" "- chore(deps): platform-kit 0.1.30 (#1343)" "$body"
+has "e2e 재실행: compare 범위" "compare/refs/tags/v2026.10.14.3...$SHA?per_page=100" "$(cat "$WORK/calls.log")"
+eq "e2e 재실행: Release 태그" v2026.10.15.1 "$(jq -r .tag_name "$WORK/inputs.log")"
+eq "e2e 재실행: Latest" true "$(jq -r .make_latest "$WORK/inputs.log")"
+has "e2e 재실행: Slack :rocket:" ":rocket: *backend* prod 배포 완료 — *v2026.10.15.1*" "$(jq -r .text "$WORK/slack.log")"
+eq "e2e 재실행: 태그 새로 안 만듦" 0 "$(grep -c 'POST repos/o/r/git/refs' "$WORK/calls.log" || true)"
+
+# 진짜 기준 태그(앞 태그 없음, annotated) — 최소 Release + :repeat: 재배포
+: > "$WORK/inputs.log"; : > "$WORK/slack.log"
+out=$(FX_REFS="[$(ref v2026.10.01.1 tag bbbb)]" FX_ANNOTATED_TARGET=$SHA FX_STATUS=identical chain)
+has "e2e 기준 태그: 최소 Release" "최소 Release 생성" "$out"
+has "e2e 기준 태그: 본문" "기준 태그 — 자동 Release 이전" "$(jq -r .body "$WORK/inputs.log")"
+eq "e2e 기준 태그: Latest(최신이라)" true "$(jq -r .make_latest "$WORK/inputs.log")"
+has "e2e 기준 태그: Slack 재배포" ":repeat: *backend* prod 재배포" "$(jq -r .text "$WORK/slack.log")"
+
+# 정상 첫 배포(새 커밋) — 태그 생성 + 전체 Release
+: > "$WORK/inputs.log"; : > "$WORK/calls.log"
+out=$(FX_REFS="[$(ref v2026.10.15.1 commit $OLD)]" FX_STATUS=ahead chain)
+has "e2e 새 배포: 태그" "태그 생성: v2026.10.15.2" "$out"
+has "e2e 새 배포: 목록 기준" "## 포함된 변경 (v2026.10.15.1 이후)" "$(jq -r .body "$WORK/inputs.log")"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

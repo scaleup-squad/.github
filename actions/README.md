@@ -68,6 +68,8 @@ jobs:
 - plan 을 staging 에서도 돌리면 "다음 prod 이름" 이 나온다 — staging `/health` 엔 쓰지 말 것(위 예처럼 main 에서만).
 - 태그 ruleset 이 있는 레포는 `GITHUB_TOKEN`(github-actions) 이 `v*` 태그를 만들 수 있게 해 둘 것.
 - 실패 표시: 태그·Release 실패 = 스텝 실패(배포는 이미 됐다 — 기록이 빠졌다는 신호). Slack 실패 = 경고만.
+- **plan 이 실패하면 배포 스텝도 돌지 않는다**(GitHub API 장애·rate limit·compare 404 등) — 의도된 동작이다. 버전 이름을 모른 채 배포하면 `/health` 와 태그가 어긋난다. 보통은 잠시 뒤 "Re-run jobs".
+  - **비상 탈출구**(API 장애가 길고 prod 배포가 급할 때): 호출 측 `workflow_dispatch` 에 `skip-version` 같은 boolean 입력을 두고 plan 의 `if:` 에 `&& !inputs.skip-version` 을 더한다. plan 이 건너뛰어지면 `steps.pv.outputs.mode` 가 비므로 release 의 `if:` 에 `&& steps.pv.outputs.mode != ''` 를 넣어 같이 건너뛰게 한다. 이때 `APP_VERSION` 은 빈 값(앱은 `commit` 으로 표시), 태그·Release 는 남지 않는다 — 다음 정상 배포가 새 버전을 만든다.
 
 ## 설계 결정
 
@@ -75,7 +77,12 @@ jobs:
   대신 compare API(`이전 태그...sha`) 커밋에서 꺼낸다(`notes.jq`): squash 커밋 제목 끝 `(#N)` + merge commit 으로 머지된 기능 PR(`Merge pull request #N from …` 의 본문 첫 줄). 반영 PR(`…/staging`)·역반영(`…/main`) merge 와 번호 없는 커밋은 뺀다. PR 번호로 중복 제거.
   compare 는 100개씩 끝까지 넘겨 받지만 GitHub 쪽 상한이 있어, 받은 커밋 수 < `total_commits` 면 본문에 "잘렸다" 고 쓰고 비교 링크를 남긴다.
 - **태그 충돌(422)** — 이미 있는 태그가 **같은 커밋**이면 같은 배포의 재실행으로 보고 통과(Release 가 이미 있으면 덮어쓰지 않음). **다른 커밋**이면 실패 — 이 배포의 `/health` 는 이미 그 이름으로 떴으니 N 을 몰래 올리면 `/health` 와 태그가 어긋난다. 사람이 정리한다. 배포 잡에 `concurrency` 를 걸면 생기지 않는다.
-- **Release 없는 태그에 재배포 기록**(사람이 단 기준 태그 등) — 건너뛰면 기록이 사라지므로 최소 Release 를 만들어 거기 남긴다. 그 태그가 최신일 때만 Latest 로 표시.
+- **태그는 있는데 Release 가 없는 경우** — 두 가지라 "그 태그 앞에 형식 맞는 태그가 있는가" 로 가른다.
+  - **재실행 보완**(앞 태그 있음): 1차 런이 태그까지 만들고 Release·compare 에서 실패한 뒤 "Re-run jobs" 하면, plan 은 그 태그를 보고 `redeploy` 로 판단한다. release 는 이를 알아보고 원래 했어야 할 일 — 앞 태그 기준 PR 목록 Release + `:rocket:` 배포 완료 알림 — 을 마저 한다. (예전 태그로 롤백했는데 그 Release 가 빠져 있던 경우도 목록은 채우고, 기록·알림은 롤백으로)
+  - **사람이 단 기준 태그**(앞 태그 없음): 목록을 만들 수 없으니 최소 Release 를 만들어 배포 기록만 남긴다.
+  - 둘 다 그 태그가 최신일 때만 Latest 로 표시.
+- **입력 형식 검증** — release 는 `version`·`previous-tag`·`memo-tag` 가 비어 있지 않으면 plan 과 같은 형식 정규식으로 검사하고, 어긋나면 아무것도 만들지 않고 실패한다(스텝 id 오타 등 배선 실수 방지).
+- **@멘션** — PR 제목의 `@user`·`@org/team` 은 Release 본문에서 백틱으로 감싼다. Release 발행 때 멘션 알림이 가지 않게.
 
 ## 첫 도입 — 기준 태그
 

@@ -23,4 +23,5 @@
 | reduce .[] as $x ({seen: {}, out: []};
     if .seen[$x.n | tostring] then . else .seen[$x.n | tostring] = true | .out += [$x] end)
 | .out[]
-| "- \(.t) (#\(.n))"
+# 제목의 @멘션은 백틱으로 감싼다 — Release 를 발행하면 본문의 @user·@org/team 에게 알림이 간다(이메일 a@b 는 그대로)
+| "- \(.t | gsub("(?<![\\w`])(?<m>@[A-Za-z0-9][A-Za-z0-9-]*(/[A-Za-z0-9_.-]+)?)"; "`\(.m)`")) (#\(.n))"

@@ -11,6 +11,9 @@
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# 태그 형식(TAG_RE)·정렬(sort_tags)·목록(tag_refs)은 plan 과 한 벌 — 같은 레포 체크아웃 안이라 상대 경로로 닿는다
+# shellcheck source=SCRIPTDIR/../prod-version-plan/plan.sh
+source "$HERE/../prod-version-plan/plan.sh"
 DRY_RUN=${DRY_RUN:-}
 TMP=${RUNNER_TEMP:-${TMPDIR:-/tmp}}
 
@@ -82,10 +85,10 @@ create_release() {
 # 이전 태그 이후 나간 PR 목록. compare 는 페이지당 최대 100 커밋 — 끝까지 넘겨 받는다.
 # GitHub 문서상 compare 의 커밋 목록은 상한이 있을 수 있어(대략 250~수천) 받은 수 < total_commits 면 잘렸다고 밝힌다.
 # (일 1~수회 배포라 실제로는 수십 커밋 — 상한에 닿는 건 기준 태그가 아주 오래됐을 때뿐)
-render_changes() {
+render_changes() { # $1=이전 태그
   local pages total got
   pages="$TMP/pv-compare.json"
-  gh api --paginate "repos/$REPO/compare/refs/tags/$PREVIOUS_TAG...$SHA?per_page=100" > "$pages"
+  gh api --paginate "repos/$REPO/compare/refs/tags/$1...$SHA?per_page=100" > "$pages"
   total=$(jq -s '.[0].total_commits' "$pages")
   got=$(jq -s '[.[].commits[]] | length' "$pages")
   local list
@@ -97,26 +100,31 @@ render_changes() {
   fi
 }
 
+# 버전 Release 본문. $1=이 버전 태그 $2=바로 앞 태그(없으면 빈 값) $3=배포 기록 첫 줄 이름
 new_body() {
   local server=${GITHUB_SERVER_URL:-https://github.com}
   echo "**${SERVICE}** prod 배포 — \`${SHA:0:7}\`"
   echo
-  if [ -n "$PREVIOUS_TAG" ]; then
-    echo "## 포함된 변경 (${PREVIOUS_TAG} 이후)"
-    render_changes
+  if [ -n "$2" ]; then
+    echo "## 포함된 변경 ($2 이후)"
+    render_changes "$2"
     echo
-    echo "비교: ${server}/${REPO}/compare/${PREVIOUS_TAG}...${VERSION}"
+    echo "비교: ${server}/${REPO}/compare/$2...$1"
   else
     echo "## 포함된 변경"
     echo "- 이전 버전 태그가 없어 목록을 만들 수 없다(이 레포의 첫 버전 태그). 기준 태그를 먼저 달면 다음부터 나온다."
   fi
   echo
   echo "## 배포 기록"
-  echo "- $(kst_now) 배포: \`${SHA:0:7}\`${NOTE:+ (${NOTE})} [run](${RUN_URL})"
+  echo "- $(kst_now) $3: \`${SHA:0:7}\`${NOTE:+ (${NOTE})} [run](${RUN_URL})"
+}
+
+# 형식 맞는 태그 중 $1 바로 앞 버전(없으면 빈 값)
+tag_before() {
+  tag_refs | cut -f1 | sort_tags | awk -v t="$1" '$0 == t { print p; exit } { p = $0 }'
 }
 
 do_new() {
-  [ -n "$VERSION" ] || { echo "::error::mode=new 인데 version 이 비었다" >&2; return 1; }
   create_tag
   local rel body url
   rel=$(get_release "$VERSION")
@@ -126,7 +134,7 @@ do_new() {
     echo "::notice::Release $VERSION 가 이미 있다 — 그대로 둔다: $url"
   else
     body="$TMP/pv-body.md"
-    new_body > "$body"
+    new_body "$VERSION" "$PREVIOUS_TAG" 배포 > "$body"
     url=$(create_release "$VERSION" "$body" true < /dev/null)
     echo "Release 생성: $url"
   fi
@@ -143,19 +151,39 @@ do_redeploy() {
   # 같은 커밋 재배포(정확히 붙은 태그가 최신) vs 예전 커밋으로 되돌림
   local kind=롤백
   [ -n "$VERSION" ] && [ "$VERSION" = "$PREVIOUS_TAG" ] && kind=재배포
-  local line rel id body url
+  local line rel id body url prev latest=false
   line="- $(kst_now) ${kind}: \`${SHA:0:7}\`${NOTE:+ (${NOTE})} [run](${RUN_URL})"
   rel=$(get_release "$MEMO_TAG")
   if [ -z "$rel" ]; then
-    # 사람이 단 기준 태그엔 Release 가 없을 수 있다 — 건너뛰면 기록이 사라지니 최소 Release 를 만들어 거기 남긴다.
-    # 최신 태그일 때만 Latest 로 표시(예전 태그로 롤백했는데 그 Release 가 Latest 로 뜨면 오해)
+    # 태그는 있는데 Release 가 없다 — 두 경우:
+    #  ① 재실행 보완: 1차 런이 태그까지 만들고 Release/compare 에서 실패 → "Re-run jobs" 하면 plan 은 그 태그를 보고
+    #     redeploy 라고 판단한다. 여기서 원래 했어야 할 일(PR 목록 Release + :rocket: 알림)을 마저 한다.
+    #  ② 사람이 단 기준 태그(앞 태그 없음) — 목록을 만들 수 없으니 최소 Release 에 기록만.
+    # 둘의 구분 = MEMO_TAG 앞에 형식 맞는 태그가 있는가. 최신 태그일 때만 Latest(예전 태그 롤백이 Latest 로 뜨면 오해)
+    [ "$MEMO_TAG" = "$PREVIOUS_TAG" ] && latest=true
+    prev=$(tag_before "$MEMO_TAG")
     body="$TMP/pv-body.md"
+    if [ -n "$prev" ]; then
+      if [ "$kind" = 재배포 ]; then
+        new_body "$MEMO_TAG" "$prev" "배포(재실행 — Release 보완)" > "$body"
+      else
+        # 예전 태그로 롤백했는데 그 Release 가 빠져 있었다 — 목록은 채우고 기록은 롤백으로
+        { new_body "$MEMO_TAG" "$prev" "배포(Release 보완 — 원 배포 시각 아님)"; echo "$line"; } > "$body"
+      fi
+      url=$(create_release "$MEMO_TAG" "$body" "$latest" < /dev/null)
+      echo "Release 없음(앞 태그 $prev 있음) → 재실행 보완으로 전체 Release 생성: $url"
+      RELEASE_URL=$url
+      if [ "$kind" = 재배포 ]; then
+        SLACK_TEXT=":rocket: *${SERVICE}* prod 배포 완료 — *${MEMO_TAG}* (\`${SHA:0:7}\`)${NOTE:+ · ${NOTE}}"
+      else
+        SLACK_TEXT=":repeat: *${SERVICE}* prod ${kind} — \`${SHA:0:7}\` (${MEMO_TAG})${NOTE:+ · ${NOTE}}"
+      fi
+      return 0
+    fi
     { echo "기준 태그 — 자동 Release 이전에 달린 태그라 변경 목록이 없다."
       echo
       echo "## 배포 기록"
       echo "$line"; } > "$body"
-    local latest=false
-    [ "$MEMO_TAG" = "$PREVIOUS_TAG" ] && latest=true
     url=$(create_release "$MEMO_TAG" "$body" "$latest" < /dev/null)
     echo "Release 없음 → 최소 Release 생성: $url"
   else
@@ -200,6 +228,18 @@ main() {
   VERSION=${VERSION:-} PREVIOUS_TAG=${PREVIOUS_TAG:-} MEMO_TAG=${MEMO_TAG:-} NOTE=${NOTE:-}
   if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
     echo "::error::sha 는 40자리 커밋 해시여야 한다: $SHA" >&2
+    return 1
+  fi
+  # plan 출력을 잘못 배선하면(오타·다른 스텝 id) 엉뚱한 이름으로 태그가 생긴다 — 형식부터 막는다
+  local v
+  for v in "VERSION=$VERSION" "PREVIOUS_TAG=$PREVIOUS_TAG" "MEMO_TAG=$MEMO_TAG"; do
+    if [ -n "${v#*=}" ] && ! grep -qE "$TAG_RE" <<< "${v#*=}"; then
+      echo "::error::${v%%=*} 가 버전 형식(vYYYY.MM.DD.N)이 아니다: ${v#*=}" >&2
+      return 1
+    fi
+  done
+  if [ "$MODE" = new ] && [ -z "$VERSION" ]; then
+    echo "::error::mode=new 인데 version 이 비었다 — plan 출력 배선 확인" >&2
     return 1
   fi
   RELEASE_URL="" SLACK_TEXT=""

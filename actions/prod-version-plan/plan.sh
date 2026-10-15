@@ -63,6 +63,14 @@ exact_tag() {
   done | sort_tags | tail -n 1
 }
 
+# 레포의 형식 맞는 버전 태그 ref 목록(tsv: name type objsha). release.sh 도 source 해서 쓴다.
+# matching-refs 는 접두어 일치라 v 로 시작하는 다른 태그도 오지만 형식 필터에서 걸러진다
+tag_refs() {
+  gh api --paginate "repos/$REPO/git/matching-refs/tags/v" \
+    --jq '.[] | [(.ref | ltrimstr("refs/tags/")), .object.type, .object.sha] | @tsv' \
+    | awk -F'\t' -v re="$TAG_RE" '$1 ~ re'
+}
+
 emit() {
   if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "$1=$2" >> "$GITHUB_OUTPUT"; fi
   echo "$1=$2"
@@ -77,16 +85,14 @@ main() {
   fi
 
   local refs names latest status="" mode version="" memo="" today
-  # matching-refs 는 접두어 일치라 v 로 시작하는 다른 태그도 오지만 형식 필터에서 걸러진다
-  refs=$(gh api --paginate "repos/$REPO/git/matching-refs/tags/v" \
-    --jq '.[] | [(.ref | ltrimstr("refs/tags/")), .object.type, .object.sha] | @tsv')
-  refs=$(printf '%s\n' "$refs" | awk -F'\t' -v re="$TAG_RE" '$1 ~ re')
+  refs=$(tag_refs)
   names=$(printf '%s\n' "$refs" | cut -f1)
   latest=$(printf '%s\n' "$names" | sort_tags | tail -n 1)
 
   if [ -n "$latest" ]; then
     # 실패(404 등)는 그대로 실패 — 잘못된 이름으로 배포하느니 멈춘다
-    status=$(gh api "repos/$REPO/compare/refs/tags/$latest...$SHA" --jq .status)
+    # status 만 필요 — 커밋 목록은 1개만 받는다
+    status=$(gh api "repos/$REPO/compare/refs/tags/$latest...$SHA?per_page=1" --jq .status)
   fi
   mode=$(decide_mode "$status")
 
