@@ -211,6 +211,12 @@ has "redeploy: 재배포 줄" "재배포: \`1111111\` (env 변경 재배포) [ru
 eq "redeploy: 기록 구역 1개" 1 "$(grep -c '^## 배포 기록' <<< "$body")"
 eq "redeploy: 태그 생성 안 함" 0 "$(grep -c 'git/refs' "$WORK/calls.log" || true)"
 
+# note 의 @멘션도 Release 본문에선 무력화(PR 제목과 같은 규칙)
+: > "$WORK/inputs.log"
+out=$(MODE=redeploy VERSION=v2026.10.15.10 PREVIOUS_TAG=v2026.10.15.10 MEMO_TAG=v2026.10.15.10 NOTE='@kim-1 요청 재배포' \
+  FX_RELEASE=$'{"id":1,"html_url":"https://example/rel/1","body":"요약\\n\\n## 배포 기록\\n- 첫 배포"}' rel)
+has "redeploy: note 멘션 무력화" "(\`@kim-1\` 요청 재배포)" "$(jq -r .body "$WORK/inputs.log")"
+
 # 롤백 + 기준 태그(Release 없음) → 최소 Release 생성, 최신 아니면 Latest 아님
 : > "$WORK/inputs.log"
 out=$(MODE=redeploy VERSION='' PREVIOUS_TAG=v2026.10.15.10 MEMO_TAG=v2026.10.01.1 rel)

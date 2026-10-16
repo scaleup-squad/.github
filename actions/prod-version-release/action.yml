@@ -1,6 +1,6 @@
 name: prod-version-release
 description: prod 배포·스모크 성공 후 버전 태그 + GitHub Release + Slack 알림 (재배포·롤백은 기존 Release 에 기록만)
-# composite 인 이유는 prod-version-plan 과 같다(잡 추가 과금 없음). 로직은 release.sh / notes.jq.
+# composite 인 이유는 prod-version-plan 과 같다(잡 추가 과금 없음). 로직은 release.sh / notes.jq / mentions.jq.
 # 태그·Release 실패 = 스텝 실패(빨간불). Slack 실패 = 경고만.
 # ⚠️ 이 레포는 공개 — 토큰·채널은 호출 측 secrets/vars 에서 넘긴다.
 inputs:

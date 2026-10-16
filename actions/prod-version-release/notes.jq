@@ -1,3 +1,4 @@
+include "mentions" {search: "./"};
 # compare API 응답 페이지들(jq -s 로 배열) → "이번에 나간 PR" 목록 줄.
 #
 # GitHub 자동 릴리스 노트(generate-notes)를 안 쓰는 이유: 흐름이 feature PR →(squash) staging →(merge commit 반영 PR) main
@@ -23,5 +24,5 @@
 | reduce .[] as $x ({seen: {}, out: []};
     if .seen[$x.n | tostring] then . else .seen[$x.n | tostring] = true | .out += [$x] end)
 | .out[]
-# 제목의 @멘션은 백틱으로 감싼다 — Release 를 발행하면 본문의 @user·@org/team 에게 알림이 간다(이메일 a@b 는 그대로)
-| "- \(.t | gsub("(?<![\\w`])(?<m>@[A-Za-z0-9][A-Za-z0-9-]*(/[A-Za-z0-9_.-]+)?)"; "`\(.m)`")) (#\(.n))"
+# 제목의 @멘션은 백틱으로 감싼다(mentions.jq)
+| "- \(.t | defang_mentions) (#\(.n))"

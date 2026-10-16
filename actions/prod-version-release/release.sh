@@ -116,7 +116,7 @@ new_body() {
   fi
   echo
   echo "## 배포 기록"
-  echo "- $(kst_now) $3: \`${SHA:0:7}\`${NOTE:+ (${NOTE})} [run](${RUN_URL})"
+  echo "- $(kst_now) $3: \`${SHA:0:7}\`${NOTE_MD:+ (${NOTE_MD})} [run](${RUN_URL})"
 }
 
 # 형식 맞는 태그 중 $1 바로 앞 버전(없으면 빈 값)
@@ -152,7 +152,7 @@ do_redeploy() {
   local kind=롤백
   [ -n "$VERSION" ] && [ "$VERSION" = "$PREVIOUS_TAG" ] && kind=재배포
   local line rel id body url prev latest=false
-  line="- $(kst_now) ${kind}: \`${SHA:0:7}\`${NOTE:+ (${NOTE})} [run](${RUN_URL})"
+  line="- $(kst_now) ${kind}: \`${SHA:0:7}\`${NOTE_MD:+ (${NOTE_MD})} [run](${RUN_URL})"
   rel=$(get_release "$MEMO_TAG")
   if [ -z "$rel" ]; then
     # 태그는 있는데 Release 가 없다 — 두 경우:
@@ -226,6 +226,8 @@ notify_slack() {
 main() {
   : "${REPO:?}" "${SHA:?}" "${MODE:?}" "${SERVICE:?service 필요}" "${RUN_URL:?}"
   VERSION=${VERSION:-} PREVIOUS_TAG=${PREVIOUS_TAG:-} MEMO_TAG=${MEMO_TAG:-} NOTE=${NOTE:-}
+  # Release 본문용 note — @멘션 무력화(PR 제목과 같은 규칙). Slack 은 GitHub 멘션이 안 가니 원문 그대로
+  NOTE_MD=$(jq -rn -L "$HERE" --arg s "$NOTE" 'include "mentions"; $s | defang_mentions')
   if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
     echo "::error::sha 는 40자리 커밋 해시여야 한다: $SHA" >&2
     return 1
