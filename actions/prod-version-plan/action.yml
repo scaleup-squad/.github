@@ -1,0 +1,44 @@
+name: prod-version-plan
+description: prod 배포 직전에 이번 배포의 버전 이름(vYYYY.MM.DD.N, KST)을 정한다 — 읽기 전용, 태그는 안 만든다
+# 왜 composite 인가: prod 배포는 월 ~220회. reusable workflow 로 잡을 따로 띄우면 잡마다 1분 단위 과금이 붙는다.
+# 호출 측 배포 잡 안의 스텝으로 돌아 추가 잡·러너가 없다. 로직은 plan.sh (로컬 테스트 가능).
+# ⚠️ 이 레포는 공개 — 토큰은 호출 측이 넘긴다.
+inputs:
+  token:
+    description: 대상 레포 contents:read 토큰 (보통 github.token)
+    required: true
+  sha:
+    description: 배포할 커밋(40자리)
+    default: ${{ github.sha }}
+  repository:
+    description: owner/name
+    default: ${{ github.repository }}
+outputs:
+  version:
+    description: new 면 새 버전 이름, redeploy 면 sha 에 정확히 붙은 태그(없으면 빈 값)
+    value: ${{ steps.plan.outputs.version }}
+  commit:
+    description: sha 앞 7자리
+    value: ${{ steps.plan.outputs.commit }}
+  deployed-at:
+    description: ISO-8601 UTC (계획 시점 = 배포 직전)
+    value: ${{ steps.plan.outputs.deployed-at }}
+  mode:
+    description: new | redeploy (같은 커밋 재배포·예전 커밋 롤백)
+    value: ${{ steps.plan.outputs.mode }}
+  previous-tag:
+    description: 지금 있는 가장 최신 v* 태그(없으면 빈 값)
+    value: ${{ steps.plan.outputs.previous-tag }}
+  memo-tag:
+    description: redeploy 때 기록을 덧붙일 Release 의 태그
+    value: ${{ steps.plan.outputs.memo-tag }}
+runs:
+  using: composite
+  steps:
+    - id: plan
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        REPO: ${{ inputs.repository }}
+        SHA: ${{ inputs.sha }}
+      run: bash "$GITHUB_ACTION_PATH/plan.sh"
