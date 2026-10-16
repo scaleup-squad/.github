@@ -33,7 +33,7 @@ jobs:
 
       - id: pv
         if: github.ref == 'refs/heads/main'
-        uses: scaleup-squad/.github/actions/prod-version-plan@main
+        uses: scaleup-squad/.github/actions/prod-version-plan@<40자리 커밋 SHA>  # main @ YYYY-MM-DD — 아래 "버전 고정"
         with:
           token: ${{ github.token }}
 
@@ -49,7 +49,7 @@ jobs:
         run: ./smoke.sh
 
       - if: success() && github.ref == 'refs/heads/main'
-        uses: scaleup-squad/.github/actions/prod-version-release@main
+        uses: scaleup-squad/.github/actions/prod-version-release@<40자리 커밋 SHA>  # main @ YYYY-MM-DD — 아래 "버전 고정"
         with:
           token: ${{ github.token }}
           version: ${{ steps.pv.outputs.version }}
@@ -63,6 +63,7 @@ jobs:
 ```
 
 알아둘 것:
+- **버전 고정** — `@main` 으로 부르지 말고 이 레포 커밋 SHA 로 고정한다. 이 액션은 `contents: write` 토큰을 받고 prod 배포 잡 안에서 도는데, `@main` 이면 이 레포 main 이 바뀌는 순간 모든 레포의 prod 배포가 바로 그 코드를 탄다. 올릴 땐 `gh api repos/scaleup-squad/.github/commits/main -q .sha` 로 SHA 를 받아 호출 레포마다 PR 로 바꾼다(변경 검토가 PR 에 남는다).
 - **checkout 불필요** — 둘 다 GitHub API(`gh`·`jq`·`curl`)만 쓴다. GitHub 호스티드 러너엔 기본 설치. 셀프호스티드면 세 개가 있어야 한다.
 - `sha` 기본값은 `github.sha`. 배포 커밋이 다르면(수동 재배포 워크플로 등) plan·release 에 **같은** 40자리 sha 를 넘길 것.
 - plan 을 staging 에서도 돌리면 "다음 prod 이름" 이 나온다 — staging `/health` 엔 쓰지 말 것(위 예처럼 main 에서만).
