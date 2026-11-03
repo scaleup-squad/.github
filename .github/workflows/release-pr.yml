@@ -77,11 +77,18 @@ jobs:
             exit 0
           fi
 
+          NUM=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number // empty')
+          # 기존 본문의 체크 상태([x] … (#N)) 를 보존한다 — staging 푸시마다 본문을 다시 쓰기 때문
+          CHECKED=""
+          if [ -n "$NUM" ]; then
+            CHECKED=$(gh pr view "$NUM" --json body --jq .body | grep -E '^- \[x\] ' | sed -E 's/ — @[A-Za-z0-9-]+$//' | grep -oE '\(#[0-9]+\)$' | tr -d '()' || true)
+          fi
+
           BODY="${RUNNER_TEMP:-/tmp}/release-pr-body.md"
           {
             echo "staging → main 반영 PR — staging 푸시 때마다 자동 갱신(release-pr.yml). 승인·머지는 사람이 한다."
             echo
-            echo "## 이번 반영에 포함된 변경"
+            echo "## 이번 반영에 포함된 변경 — 작성자가 staging 검증(배포 success·스모크) 뒤 체크. 전부 ✅ 일 때만 머지 (gos-harness #135)"
             # staging 안에서 넣었다 되돌린 쌍은 prod 영향이 없으니 '롤백됨'. 비교는 끝의 (#N) 을 떼고 한다 —
             # merge commit 으로 머지된 Revert 는 제목에 원 PR 번호가 없다.
             # (짝 없는 Revert = 이미 prod 에 나간 것을 빼는 변경이라 그대로 둔다)
@@ -93,9 +100,18 @@ jobs:
                 for (i = 1; i <= NR; i++) {
                   s = line[i]; t = target(s)
                   if ((key(s) in reverted) || (t != "" && (t in has))) print "- ~~" s "~~ (staging 에서 롤백됨)"
-                  else print "- " s
+                  else print "- [ ] " s
                 }
-              }'
+              }' | while IFS= read -r line; do
+                # 활성 항목: 작성자 멘션 + 이전에 체크돼 있었으면 [x] 유지
+                n=$(printf '%s' "$line" | grep -oE '\(#[0-9]+\)$' | tr -d '()' || true)
+                if [ -n "$n" ] && [ "${line#"- [ ] "}" != "$line" ]; then  # 패턴 안 [ ] 는 글자 클래스라 따옴표 필수
+                  author=$(gh pr view "${n#\#}" --json author --jq .author.login 2>/dev/null || true)
+                  [ -n "$author" ] && line="$line — @$author"
+                  printf '%s\n' "$CHECKED" | grep -qx "$n" && line="- [x] ${line#"- [ ] "}"
+                fi
+                printf '%s\n' "$line"
+              done
             # 마이그 경로를 준 레포(backend)만 — DB 스키마가 없는 레포엔 이 구역 자체를 안 쓴다
             if [ -n "$MIGRATIONS_PATH" ]; then
               echo
@@ -112,9 +128,8 @@ jobs:
           } > "$BODY"
 
           # 건수 = 변경 목록 구역에서 롤백되지 않은 줄
-          ACTIVE=$(sed -n '/^## 이번 반영/,/^$/p' "$BODY" | grep -c '^- [^~]' || true)
+          ACTIVE=$(sed -n '/^## 이번 반영/,/^$/p' "$BODY" | grep -c '^- \[' || true)
           TITLE="release: staging → main (${ACTIVE}건)"
-          NUM=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number // empty')
           if [ -n "$NUM" ]; then
             gh pr edit "$NUM" --title "$TITLE" --body-file "$BODY"
             echo "반영 PR #$NUM 갱신"
