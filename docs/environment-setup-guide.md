@@ -1,336 +1,61 @@
-# 환경 분리 가이드 (Dev / Staging / Production)
+# 환경 구성 가이드 (local / staging / prod)
 
-이 문서는 ScaleUp Squad의 모든 프로젝트에서 사용하는 환경 분리 전략을 설명합니다.
+GOS 앱(backend·dashboard·ai·automations)이 어느 환경에서 어떻게 돌고, 무엇이 무엇을 바라보는지 정리한다.
+배포 흐름은 [브랜치 전략 가이드](branching-strategy.md)가 정본이다.
 
-## 목차
-
-- [개요](#개요)
-- [아키텍처](#아키텍처)
-- [환경별 구성](#환경별-구성)
-- [환경 변수 설정](#환경-변수-설정)
-- [Supabase 설정](#supabase-설정)
-- [도메인 구성](#도메인-구성)
+> 서버 주소·키·접속 방법 같은 운영 세부는 공개 문서에 두지 않는다 — 조직 내부 문서(`.github-private`·`gos-harness` runbook)를 본다.
 
 ---
 
-## 개요
+## 환경 3개
 
-### 환경 정의
+| | local | staging | prod |
+|---|---|---|---|
+| 목적 | 각자 개발 | 머지 전 공용 미리보기 (서버 1대 공유) | 실 서비스 |
+| 어떻게 올라가나 | 각자 PC 에서 실행 | 확인할 브랜치를 수동 실행(`gh workflow run … --ref <브랜치>`) | `main` 머지 = 자동 배포 |
+| backend | `localhost:8787` | `staging-api.growthmaker.kr` | `api.growthmaker.kr` |
+| dashboard | `localhost:3000` | `gos-dev.vercel.app` (Vercel Preview) | `app.growthmaker.kr` (Vercel Production) |
+| ai | `localhost:8000` | staging 서버 (backend 를 통해서만 호출) | prod 서버 (backend 를 통해서만 호출) |
+| automations | 필요 시 로컬 | staging 서버 | prod 서버 |
+| DB (Supabase) | 로컬 Supabase (`npx supabase start`) | **staging 프로젝트** (익명 시드 데이터) | **prod 프로젝트** |
 
-| 환경 | 목적 | 사용자 |
-|------|------|--------|
-| **Development** | 개발 및 테스트 | 개발자 |
-| **Staging** | QA 및 배포 전 검증 | 개발자, QA |
-| **Production** | 실 서비스 운영 | 최종 사용자 |
+- **prod 와 staging 은 Supabase 프로젝트가 따로다.** staging 데이터는 익명화된 시드라 마음껏 써도 된다.
+- dashboard 의 **모든 PR 미리보기(Vercel Preview)도 staging backend·DB 를 바라본다** — 의도된 설정.
+- dashboard 는 ai 를 직접 부르지 않는다. 항상 backend 의 `/api/ai/*` 프록시를 거친다.
+- agent 는 prod 서버에서만 돈다. landing 은 staging 대신 PR 미리보기로 확인한다.
 
-### 브랜치와 배포
+## 비밀값·환경 변수
 
-브랜치는 `feature/*` 와 `main` 두 가지뿐이다 — 자세한 흐름은 [브랜치 전략 가이드](branching-strategy.md).
+| 대상 | 정본 | 바꾸는 법 |
+|---|---|---|
+| 서버에서 도는 서비스 (backend·ai·automations·agent) | AWS Parameter Store `/gos/{stage}/{service}/` — 기동 시 주입 | 값 수정 후 재배포 |
+| dashboard | Vercel 프로젝트 환경 변수 (Production / Preview) | `vercel env add/rm` → 배포 워크플로 수동 실행 |
+| 로컬 개발 | 각 레포 `.env.example` 복사 (기본값은 로컬 안전값). 외부 연동이 필요할 때만 조직 금고(Bitwarden) staging 컬렉션 | — |
 
-| 환경 | 어떻게 배포되나 |
-|------|----------------|
-| Production | `main` 머지 = 자동 배포 |
-| Staging | 확인하고 싶은 브랜치를 수동 실행(`gh workflow run … --ref <브랜치>`)으로 올린다. 서버 1대를 같이 쓴다 |
-| PR 미리보기 | dashboard·landing 은 PR 마다 Vercel Preview 가 뜬다 (dashboard Preview 는 staging backend·DB 를 바라봄) |
+- prod 비밀값은 리드만 다룬다. 로컬·staging 은 staging 값만 쓴다.
+- 비밀값을 Slack·이슈·PR·채팅에 평문으로 붙이지 않는다.
 
-> `develop` 브랜치와 Development 환경은 운영하지 않는다. 로컬 개발은 각자 PC 에서 한다.
+## DB 스키마 (Supabase)
 
----
+- 모든 레포의 스키마 변경은 **growthmaker-backend `supabase/migrations/`** 가 정본이다 (다른 레포는 마이그 파일을 두지 않는다).
+- 적용은 backend 배포 잡이 한다 — staging 서버에 올리면 staging DB, `main` 에 머지하면 prod DB.
+- 타입은 `@scaleup-squad/platform-kit` 이 prod 스키마에서 자동 생성한다. 스키마가 바뀌면 각 레포에 `auto/platform-kit-*` PR 이 열린다 → 하나씩 머지.
 
-## 아키텍처
+## 상태 확인 (health)
 
-### 현재 구성
+| 서비스 | staging | prod |
+|---|---|---|
+| backend | `https://staging-api.growthmaker.kr/health` | `https://api.growthmaker.kr/health` |
+| ai | 배포 워크플로의 `Deploy to Staging` 단계가 확인 | `https://api.growthmaker.kr/ai/health` |
+| dashboard | `https://gos-dev.vercel.app` | `https://app.growthmaker.kr` |
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        Frontend                              │
-│                        (Vercel)                              │
-│  ┌─────────────────────────────────┐  ┌─────────────┐       │
-│  │  Preview (PR·staging 확인)       │  │ Production  │       │
-│  │                                 │  │   (main)    │       │
-│  └──────────────┬──────────────────┘  └──────┬──────┘       │
-│                 │  app.growthmaker.kr        │              │
-└─────────────────┼────────────────────────────┼──────────────┘
-                  │                            │
-                  ▼                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                        Backend                               │
-│                       (AWS EC2)                              │
-│                   api.growthmaker.kr                         │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
-│  │    /dev     │  │   /stage    │  │     /       │          │
-│  │   (8801)    │  │   (8802)    │  │   (8800)    │          │
-│  └─────────────┘  └─────────────┘  └─────────────┘          │
-└─────────────────────────────────────────────────────────────┘
-                  │                            │
-                  ▼                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      AI Service                              │
-│                  (AWS EC2 - Docker)                          │
-│                   api.growthmaker.kr                         │
-│  ┌─────────────────────────┐  ┌─────────────────────────┐   │
-│  │      /ai-stage          │  │         /ai             │   │
-│  │       (8001)            │  │        (8000)           │   │
-│  │   growthmaker-ai-stg    │  │    growthmaker-ai       │   │
-│  └─────────────────────────┘  └─────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                  │                            │
-                  ▼                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       Database                               │
-│                      (Supabase)                              │
-│  ┌─────────────────────────────────────────────────┐        │
-│  │  sssfkmjaoqkltwoaipbc.supabase.co               │        │
-│  │  (단일 프로젝트 - 모든 환경 공유)                  │        │
-│  └─────────────────────────────────────────────────┘        │
-└─────────────────────────────────────────────────────────────┘
-```
+> 예전 경로 `api.growthmaker.kr/stage`·`/dev`·`/ai-stage` 는 폐지됐다 (410 응답). Development 환경과 `develop` 브랜치도 운영하지 않는다.
+
+## 함께 볼 문서
+
+- [브랜치 전략](branching-strategy.md) — 브랜치·PR·staging 올리기·머지
+- [배포 워크플로우](deployment-workflow.md) — CI/CD 파이프라인 구조
 
 ---
 
-## 환경별 구성
-
-### Frontend (Vercel)
-
-**GitHub Actions + Vercel CLI 배포 방식 사용**
-
-| 무엇을 | Vercel 환경 | 비고 |
-|--------|-------------|------|
-| 수동 실행한 브랜치 | Preview + `gos-dev.vercel.app` 별칭 | staging 확인용 |
-| PR 브랜치 | Preview | PR 미리보기 |
-| `main` | Production | 실 서비스 (`app.growthmaker.kr`) |
-
-#### GitHub Secrets (Dashboard)
-
-| Secret | 설명 |
-|--------|------|
-| `VERCEL_ORG_ID` | Vercel Organization ID |
-| `VERCEL_PROJECT_ID` | Vercel Project ID |
-| `VERCEL_TOKEN` | Vercel API Token |
-
-#### Vercel 환경 변수 현황
-
-| 변수명 | Production | Preview | 비고 |
-|--------|------------|---------|------|
-| `NEXT_PUBLIC_API_URL` | `https://api.growthmaker.kr` | `https://api.growthmaker.kr/stage` | 환경별 분리 |
-| `NEXT_PUBLIC_AI_API_URL` | `https://api.growthmaker.kr/ai` | `https://api.growthmaker.kr/ai-stage` | AI 서비스 |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://sssfkmjaoqkltwoaipbc.supabase.co` | 동일 | 단일 프로젝트 |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | All Environments | - | 단일 프로젝트 |
-| `SUPABASE_SERVICE_ROLE_KEY` | All Environments | - | 단일 프로젝트 |
-| `NEXT_PUBLIC_BASE_URL` | `https://app.growthmaker.kr` | 동일 | - |
-| `SLACK_WEBHOOK_URL` | All Environments | - | 알림용 |
-
----
-
-### Backend (AWS EC2)
-
-**Bun 런타임 + EC2 배포 스크립트 방식 사용**
-
-#### 현재 구성: 단일 EC2 + 경로 기반 분리
-
-| 환경 | API Endpoint | 포트 |
-|------|--------------|------|
-| Development | `https://api.growthmaker.kr/dev` | 8801 |
-| Staging | `https://api.growthmaker.kr/stage` | 8802 |
-| Production | `https://api.growthmaker.kr` | 8800 |
-
-#### GitHub Secrets (Backend)
-
-| 환경 | HOST | USER | KEY |
-|------|------|------|-----|
-| Development | `DEV_DEPLOY_HOST` | `DEV_DEPLOY_USER` | `DEV_DEPLOY_KEY` |
-| Staging | `STAGE_DEPLOY_HOST` | `STAGE_DEPLOY_USER` | `STAGE_DEPLOY_KEY` |
-| Production | `PROD_DEPLOY_HOST` | `PROD_DEPLOY_USER` | `PROD_DEPLOY_KEY` |
-
-| Secret | 현재 값 |
-|--------|---------|
-| `*_DEPLOY_HOST` | `15.165.206.67` |
-| `*_DEPLOY_USER` | `ec2-user` |
-| `*_DEPLOY_KEY` | SSH 프라이빗 키 (pem) |
-
----
-
-### AI Service (AWS EC2 - Docker)
-
-**Docker + GHCR 방식 사용**
-
-#### 현재 구성: 단일 EC2 + Docker Compose
-
-| 환경 | API Endpoint | 포트 | 컨테이너 |
-|------|--------------|------|----------|
-| Staging | `https://api.growthmaker.kr/ai-stage` | 8001 | growthmaker-ai-staging |
-| Production | `https://api.growthmaker.kr/ai` | 8000 | growthmaker-ai |
-
-#### GitHub Secrets (AI Service)
-
-| Secret | 설명 | 현재 값 |
-|--------|------|---------|
-| `DEPLOY_HOST` | EC2 IP | `15.165.206.67` |
-| `DEPLOY_USER` | SSH 사용자명 | `ec2-user` |
-| `DEPLOY_SSH_KEY` | SSH 프라이빗 키 | pem 파일 내용 |
-| `DEPLOY_PATH` | 배포 경로 | `/var/www/growthmaker-ai` |
-| `GHCR_PAT` | GHCR 인증 토큰 | PAT (read:packages) |
-
-#### EC2 디렉토리 구조
-
-```
-/var/www/
-├── growthmaker-ai/              # Production
-│   ├── docker-compose.yml
-│   └── .env
-├── growthmaker-ai-staging/      # Staging
-│   ├── docker-compose.yml
-│   └── .env
-└── growthmaker-backend/         # Backend (PM2)
-```
-
----
-
-## 환경 변수 설정
-
-### Frontend (.env 파일 구조)
-
-```
-growthmaker-dashboard/
-├── .env.local              # 로컬 개발용 (gitignore)
-├── .env.example            # 환경 변수 템플릿 (git에 포함)
-```
-
-#### .env.example
-
-```bash
-# App
-NEXT_PUBLIC_BASE_URL=https://app.growthmaker.kr
-
-# API
-NEXT_PUBLIC_API_URL=https://api.growthmaker.kr
-NEXT_PUBLIC_AI_API_URL=https://api.growthmaker.kr/ai
-
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://sssfkmjaoqkltwoaipbc.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# Notifications
-SLACK_WEBHOOK_URL=your_slack_webhook_url
-```
-
-### Backend (.env 파일 구조)
-
-```
-growthmaker-backend/
-├── .env                    # 로컬 개발용 (gitignore)
-├── .env.example            # 템플릿
-```
-
-### AI Service (.env 파일 구조)
-
-```
-growthmaker-ai/
-├── .env                    # Production 환경 변수
-└── docker-compose.yml
-
-growthmaker-ai-staging/
-├── .env                    # Staging 환경 변수
-└── docker-compose.yml
-```
-
----
-
-## Supabase 설정
-
-### 현재 상태: 단일 프로젝트
-
-| 환경 | 프로젝트 | URL |
-|------|----------|-----|
-| 모든 환경 | `sssfkmjaoqkltwoaipbc` | `https://sssfkmjaoqkltwoaipbc.supabase.co` |
-
-> ⚠️ **주의**: 현재 모든 환경에서 동일한 Supabase 프로젝트를 사용 중입니다.
-
-### 타입 생성
-
-```bash
-npx supabase gen types typescript --project-id sssfkmjaoqkltwoaipbc > src/types/database.types.ts
-```
-
----
-
-## 도메인 구성
-
-### 현재 도메인 구조
-
-| 서비스 | Staging | Production |
-|--------|---------|------------|
-| Frontend | Vercel Preview URL | `app.growthmaker.kr` |
-| Backend API | `api.growthmaker.kr/stage` | `api.growthmaker.kr` |
-| AI API | `api.growthmaker.kr/ai-stage` | `api.growthmaker.kr/ai` |
-
-### Nginx 설정 (EC2)
-
-```nginx
-server {
-    server_name api.growthmaker.kr;
-
-    # AI Service - Production
-    location /ai/ {
-        proxy_pass http://127.0.0.1:8000;
-    }
-
-    # AI Service - Staging
-    location /ai-stage/ {
-        proxy_pass http://127.0.0.1:8001;
-    }
-
-    # Backend - Dev
-    location /dev/ {
-        proxy_pass http://127.0.0.1:8801;
-    }
-
-    # Backend - Stage
-    location /stage/ {
-        proxy_pass http://127.0.0.1:8802;
-    }
-
-    # Backend - Production
-    location / {
-        proxy_pass http://127.0.0.1:8800;
-    }
-
-    listen 443 ssl;
-    ssl_certificate /etc/letsencrypt/live/api.growthmaker.kr/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.growthmaker.kr/privkey.pem;
-}
-```
-
----
-
-## 서비스 상태 확인
-
-### Health Check URLs
-
-| 서비스 | 환경 | URL |
-|--------|------|-----|
-| Backend | Production | `https://api.growthmaker.kr/health` |
-| Backend | Staging | `https://api.growthmaker.kr/stage/health` |
-| AI | Production | `https://api.growthmaker.kr/ai/health` |
-| AI | Staging | `https://api.growthmaker.kr/ai-stage/health` |
-
-### Docker 컨테이너 확인
-
-```bash
-ssh ec2-user@15.165.206.67
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-```
-
----
-
-## 다음 단계
-
-- [브랜치 전략](./branching-strategy.md) - Git 브랜치 관리 방법
-- [배포 워크플로우](./deployment-workflow.md) - CI/CD 파이프라인 설정
-
----
-
-**문서 버전**: 1.4
-**최종 수정**: 2026-01-24
-**Project**: GrowthMaker
+**최종 수정**: 2026-11-04 (staging 전용 서버·DB 분리, staging 브랜치 폐지 반영)
