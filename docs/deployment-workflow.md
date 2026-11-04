@@ -2,6 +2,9 @@
 
 GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 
+> **2026-11-03 브랜치 전략 변경** — `develop`·`staging` 브랜치는 없다. `main` 머지 = prod 배포, staging 서버는 아무 브랜치나 수동 실행으로 올린다. 흐름은 [브랜치 전략 가이드](branching-strategy.md)가 정본이다.
+> 아래 워크플로 YAML 은 구조를 보여주는 예시(2026-01 기준)이며 트리거·잡 조건이 현재와 다르다. 실제 정의는 각 레포의 `.github/workflows/` 를 본다.
+
 ## 목차
 
 - [개요](#개요)
@@ -18,11 +21,10 @@ GitHub Actions를 활용한 CI/CD 파이프라인 설정 가이드입니다.
 
 ### 배포 트리거
 
-| 브랜치 | 이벤트 | 배포 환경 |
+| 무엇을 | 이벤트 | 배포 환경 |
 |--------|--------|-----------|
-| `develop` | push | Development |
-| `staging` | push | Staging |
-| `main` | push | Production |
+| `main` | push (PR 머지) | Production |
+| 아무 브랜치 | `workflow_dispatch` (`gh workflow run … --ref <브랜치>`) | Staging |
 
 ### 파이프라인 흐름
 
@@ -449,27 +451,19 @@ services:
 - [ ] 환경 변수 설정 확인
 - [ ] 마이그레이션 필요 여부 확인
 
-### Development 배포
+### Staging 확인 (선택이지만 권장)
 
-- [ ] `feature/*` → `develop` PR 머지
-- [ ] GitHub Actions 성공 확인
-- [ ] Dev 환경에서 기능 테스트
-
-### Staging 배포
-
-- [ ] `develop` → `staging` PR 생성
-- [ ] 변경 사항 리뷰
-- [ ] PR 머지
-- [ ] Staging 환경에서 QA 테스트
+- [ ] PR(`feature/*` → `main`) CI 통과
+- [ ] 다른 사람이 staging 을 쓰는 중인지 확인 (`gh run list --workflow <파일> --limit 3`)
+- [ ] `gh workflow run <파일> --ref <브랜치>` 로 staging 서버에 올림
+- [ ] staging 에서 기능 확인
 
 ### Production 배포
 
-- [ ] `staging` → `main` PR 생성
-- [ ] 최종 변경 사항 리뷰
-- [ ] 팀 승인 획득
-- [ ] PR 머지
-- [ ] Production 환경 모니터링
-- [ ] 롤백 계획 준비
+- [ ] 리드 승인
+- [ ] PR squash 머지 (= 자동 배포)
+- [ ] 배포 런 성공 + `/health`·화면 확인
+- [ ] 롤백 계획 준비 (PR Revert 또는 `vercel promote`)
 
 ---
 
@@ -520,7 +514,7 @@ docker compose up -d
 
 ## CI/CD 파이프라인 상태
 
-### 테스트 완료 (2026-01-24)
+### 테스트 완료 (2026-01-24 · 당시 브랜치 기준 기록)
 
 | Repository | 브랜치 | 환경 | 상태 |
 |------------|--------|------|------|
