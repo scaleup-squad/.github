@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 320" width="960" height="320" role="img" aria-labelledby="t d">
+  <title id="t">배포 단위 = PR 하나</title>
+  <desc id="d">feature 브랜치를 main 에서 따서 작업하고, PR 을 열어 자동 검사를 통과하면 staging 서버에 올려 확인한 뒤, 승인을 받아 main 에 머지하면 prod 에 자동 배포된다.</desc>
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif; }
+    .lane { font-size: 15px; font-weight: 700; fill: #1f2937; }
+    .step { font-size: 13px; font-weight: 600; fill: #1f2937; }
+    .sub { font-size: 11.5px; fill: #6b7280; }
+    .box { font-size: 13px; font-weight: 700; }
+  </style>
+
+  <rect x="0" y="0" width="960" height="320" rx="16" fill="#ffffff"/>
+  <rect x="0.5" y="0.5" width="959" height="319" rx="16" fill="none" stroke="#e5e7eb"/>
+
+  <!-- main lane -->
+  <text x="28" y="246" class="lane">main</text>
+  <line x1="80" y1="240" x2="790" y2="240" stroke="#9ca3af" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- feature lane -->
+  <text x="190" y="128" class="lane" fill="#2563eb" style="fill:#2563eb">feature/새-기능</text>
+  <path d="M130,240 C160,240 160,150 190,150 L620,150 C650,150 670,240 700,240"
+        fill="none" stroke="#93c5fd" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- staging server -->
+  <g>
+    <rect x="410" y="20" width="190" height="56" rx="10" fill="#fff7ed" stroke="#fb923c" stroke-width="2">
+      <animate attributeName="fill" values="#fff7ed;#fff7ed;#fed7aa;#fed7aa;#fff7ed;#fff7ed" keyTimes="0;0.45;0.47;0.6;0.62;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <text x="505" y="45" text-anchor="middle" class="box" fill="#c2410c" style="fill:#c2410c">staging 서버</text>
+    <text x="505" y="63" text-anchor="middle" class="sub">공용 미리보기 · 한 번에 한 브랜치</text>
+    <line x1="505" y1="80" x2="505" y2="146" stroke="#fb923c" stroke-width="2" stroke-dasharray="5 5"/>
+    <circle r="6" cx="505" cy="146" fill="#f97316" opacity="0">
+      <animate attributeName="cy" values="146;146;84;146;146" keyTimes="0;0.46;0.51;0.58;1" dur="10s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;0.455;0.46;0.58;0.585;1" dur="10s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- prod -->
+  <g>
+    <rect x="800" y="212" width="136" height="56" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="2">
+      <animate attributeName="fill" values="#ecfdf5;#ecfdf5;#a7f3d0;#a7f3d0;#ecfdf5" keyTimes="0;0.86;0.88;0.98;1" dur="10s" repeatCount="indefinite"/>
+    </rect>
+    <text x="868" y="237" text-anchor="middle" class="box" fill="#047857" style="fill:#047857">prod 자동 배포</text>
+    <text x="868" y="255" text-anchor="middle" class="sub">main 머지 = 배포</text>
+  </g>
+
+  <!-- stations -->
+  <g>
+    <circle cx="260" cy="150" r="13" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+    <text x="260" y="155" text-anchor="middle" class="step" style="fill:#2563eb">1</text>
+    <text x="260" y="186" text-anchor="middle" class="step">작업·커밋</text>
+    <text x="260" y="203" text-anchor="middle" class="sub">main 에서 분기</text>
+    <circle cx="260" cy="150" r="13" fill="#2563eb" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.25;0.25;0;0" keyTimes="0;0.11;0.12;0.2;0.21;1" dur="10s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  <g>
+    <circle cx="380" cy="150" r="13" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+    <text x="380" y="155" text-anchor="middle" class="step" style="fill:#2563eb">2</text>
+    <text x="380" y="186" text-anchor="middle" class="step">PR + 자동 검사</text>
+    <text x="380" y="203" text-anchor="middle" class="sub">base = main</text>
+    <circle cx="380" cy="150" r="13" fill="#2563eb" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.25;0.25;0;0" keyTimes="0;0.26;0.27;0.37;0.38;1" dur="10s" repeatCount="indefinite"/>
+    </circle>
+    <text x="398" y="138" class="step" style="fill:#10b981" opacity="0">✓
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.34;0.35;0.97;1" dur="10s" repeatCount="indefinite"/>
+    </text>
+  </g>
+  <g>
+    <circle cx="505" cy="150" r="13" fill="#ffffff" stroke="#f97316" stroke-width="2.5"/>
+    <text x="505" y="155" text-anchor="middle" class="step" style="fill:#f97316">3</text>
+    <text x="505" y="186" text-anchor="middle" class="step">staging 에서 확인</text>
+    <text x="505" y="203" text-anchor="middle" class="sub">수동 실행으로 올림</text>
+    <text x="523" y="138" class="step" style="fill:#10b981" opacity="0">✓
+      <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.59;0.6;0.97;1" dur="10s" repeatCount="indefinite"/>
+    </text>
+  </g>
+  <g>
+    <circle cx="620" cy="150" r="13" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+    <text x="620" y="155" text-anchor="middle" class="step" style="fill:#2563eb">4</text>
+    <text x="620" y="186" text-anchor="middle" class="step">승인 → 머지</text>
+    <text x="620" y="203" text-anchor="middle" class="sub">squash</text>
+    <circle cx="620" cy="150" r="13" fill="#2563eb" opacity="0">
+      <animate attributeName="opacity" values="0;0;0.25;0.25;0;0" keyTimes="0;0.65;0.66;0.72;0.73;1" dur="10s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- the PR token -->
+  <g>
+    <circle r="10" fill="#2563eb" stroke="#ffffff" stroke-width="3">
+      <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear"
+        path="M130,240 C160,240 160,150 190,150 L620,150 C650,150 670,240 700,240 L800,240"
+        keyPoints="0;0.256;0.256;0.406;0.406;0.556;0.556;0.706;0.706;1;1"
+        keyTimes="0;0.12;0.2;0.27;0.37;0.44;0.6;0.66;0.72;0.86;1"/>
+    </circle>
+  </g>
+
+  <text x="28" y="300" class="sub">브랜치는 feature/* 와 main 두 가지뿐. staging 은 브랜치가 아니라 서버다.</text>
+</svg>

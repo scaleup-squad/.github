@@ -74,8 +74,8 @@ jobs:
 
 ## 설계 결정
 
-- **Release 본문의 PR 목록** — GitHub 자동 노트(generate-notes)는 쓰지 않는다. 흐름이 feature PR →(squash) `staging` →(merge commit 반영 PR) `main` 이라 `main` 기준으론 "release: staging → main" 만 잡힌다.
-  대신 compare API(`이전 태그...sha`) 커밋에서 꺼낸다(`notes.jq`): squash 커밋 제목 끝 `(#N)` + merge commit 으로 머지된 기능 PR(`Merge pull request #N from …` 의 본문 첫 줄). 반영 PR(`…/staging`)·역반영(`…/main`) merge 와 번호 없는 커밋은 뺀다. PR 번호로 중복 제거.
+- **Release 본문의 PR 목록** — GitHub 자동 노트(generate-notes)는 쓰지 않는다. 지금은 feature PR 이 `main` 에 바로 squash 머지되지만(2026-11-03~, [브랜치 전략](../docs/branching-strategy.md)), 그 이전 태그 구간엔 `staging` →(merge commit 반영 PR) `main` 흐름이 섞여 있어 자동 노트로는 "release: staging → main" 만 잡힌다.
+  대신 compare API(`이전 태그...sha`) 커밋에서 꺼낸다(`notes.jq`): squash 커밋 제목 끝 `(#N)` + merge commit 으로 머지된 기능 PR(`Merge pull request #N from …` 의 본문 첫 줄). 옛 반영 PR(`…/staging`)·역반영(`…/main`) merge 와 번호 없는 커밋은 뺀다. PR 번호로 중복 제거.
   compare 는 100개씩 끝까지 넘겨 받지만 GitHub 쪽 상한이 있어, 받은 커밋 수 < `total_commits` 면 본문에 "잘렸다" 고 쓰고 비교 링크를 남긴다.
 - **태그 충돌(422)** — 이미 있는 태그가 **같은 커밋**이면 같은 배포의 재실행으로 보고 통과(Release 가 이미 있으면 덮어쓰지 않음). **다른 커밋**이면 실패 — 이 배포의 `/health` 는 이미 그 이름으로 떴으니 N 을 몰래 올리면 `/health` 와 태그가 어긋난다. 사람이 정리한다. 배포 잡에 `concurrency` 를 걸면 생기지 않는다.
 - **태그는 있는데 Release 가 없는 경우** — 두 가지라 "그 태그 앞에 형식 맞는 태그가 있는가" 로 가른다.

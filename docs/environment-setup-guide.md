@@ -23,28 +23,17 @@
 | **Staging** | QA 및 배포 전 검증 | 개발자, QA |
 | **Production** | 실 서비스 운영 | 최종 사용자 |
 
-### 브랜치 전략
+### 브랜치와 배포
 
-```
-main (prod)     ← Production 배포
-     ↑
-staging         ← Staging 배포
-     ↑
-develop         ← Development 배포
-     ↑
-feature/*       ← 기능 개발
-```
+브랜치는 `feature/*` 와 `main` 두 가지뿐이다 — 자세한 흐름은 [브랜치 전략 가이드](branching-strategy.md).
 
-| Repository | 브랜치 | 배포 환경 |
-|------------|--------|-----------|
-| Dashboard | `main` | Production |
-| Dashboard | `staging` | Staging |
-| Dashboard | `develop` | Development (Preview) |
-| Backend | `main` | Production |
-| Backend | `staging` | Staging |
-| Backend | `develop` | Development |
-| AI Service | `main` | Production |
-| AI Service | `staging` | Staging |
+| 환경 | 어떻게 배포되나 |
+|------|----------------|
+| Production | `main` 머지 = 자동 배포 |
+| Staging | 확인하고 싶은 브랜치를 수동 실행(`gh workflow run … --ref <브랜치>`)으로 올린다. 서버 1대를 같이 쓴다 |
+| PR 미리보기 | dashboard·landing 은 PR 마다 Vercel Preview 가 뜬다 (dashboard Preview 는 staging backend·DB 를 바라봄) |
+
+> `develop` 브랜치와 Development 환경은 운영하지 않는다. 로컬 개발은 각자 PC 에서 한다.
 
 ---
 
@@ -57,7 +46,7 @@ feature/*       ← 기능 개발
 │                        Frontend                              │
 │                        (Vercel)                              │
 │  ┌─────────────────────────────────┐  ┌─────────────┐       │
-│  │  Preview (develop/staging)      │  │ Production  │       │
+│  │  Preview (PR·staging 확인)       │  │ Production  │       │
 │  │                                 │  │   (main)    │       │
 │  └──────────────┬──────────────────┘  └──────┬──────┘       │
 │                 │  app.growthmaker.kr        │              │
@@ -105,10 +94,10 @@ feature/*       ← 기능 개발
 
 **GitHub Actions + Vercel CLI 배포 방식 사용**
 
-| 브랜치 | Vercel 환경 | 비고 |
+| 무엇을 | Vercel 환경 | 비고 |
 |--------|-------------|------|
-| `develop` | Preview | 개발 테스트 |
-| `staging` | Preview | QA 테스트 |
+| 수동 실행한 브랜치 | Preview + `gos-dev.vercel.app` 별칭 | staging 확인용 |
+| PR 브랜치 | Preview | PR 미리보기 |
 | `main` | Production | 실 서비스 (`app.growthmaker.kr`) |
 
 #### GitHub Secrets (Dashboard)
