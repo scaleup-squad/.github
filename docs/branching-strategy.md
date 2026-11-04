@@ -19,22 +19,6 @@
 
 ## 브랜치 구조
 
-```mermaid
-gitGraph
-  commit id: "prod"
-  branch feature/quote-page
-  checkout feature/quote-page
-  commit id: "작업"
-  commit id: "리뷰 반영"
-  checkout main
-  merge feature/quote-page id: "머지 → prod 배포" type: HIGHLIGHT
-  branch feature/lead-alert
-  checkout feature/lead-alert
-  commit id: "작업 B"
-  checkout main
-  merge feature/lead-alert id: "머지 → prod 배포 B" type: HIGHLIGHT
-```
-
 | 브랜치 | 역할 | 규칙 |
 |---|---|---|
 | `main` | prod 그 자체 | 직접 push 금지 · PR + 승인 1명 + CI 통과 필수 · 머지 = prod 자동 배포 |
@@ -48,20 +32,7 @@ gitGraph
 
 ## 작업 흐름
 
-```mermaid
-flowchart LR
-  A["① origin/main 에서<br/>feature/* 분기"] --> B["② 로컬 검사<br/>(타입·테스트·빌드)"]
-  B --> C["③ PR 생성<br/>base = main"]
-  C --> D{"④ CI 자동 검사"}
-  D -- 실패 --> B
-  D -- 통과 --> E["⑤ staging 서버에<br/>올려서 확인"]
-  E -- 문제 --> B
-  E -- OK --> F["⑥ 리드 승인<br/>squash 머지"]
-  F --> G(["⑦ prod 자동 배포<br/>→ 배포 확인"])
-
-  style E fill:#fff7ed,stroke:#fb923c
-  style G fill:#ecfdf5,stroke:#10b981
-```
+![작업 흐름 7단계 — 분기 → 로컬 검사 → PR → CI → staging 확인 → 승인·머지 → prod](images/branching-steps.svg)
 
 ```bash
 # ① 최신 main 에서 분기
@@ -137,28 +108,7 @@ PR·이슈 템플릿은 [pr-issue-templates.md](pr-issue-templates.md) 참고.
 
 ## 예전 방식과 무엇이 달라졌나
 
-**예전** — 모두 `staging` 브랜치에 합류 → 쌓인 것 전부가 한 번에 prod 로
-
-```mermaid
-flowchart LR
-  f1[feature A] --> s[(staging 브랜치)]
-  f2[feature B] --> s
-  f3[feature C] --> s
-  s -- "반영 PR (쌓인 것 전부)" --> m1[main = prod]
-  m1 -. 역반영 .-> s
-  style s fill:#fef2f2,stroke:#ef4444
-```
-
-**지금** — PR 하나씩 main 으로. staging 서버는 확인할 때만 따로 올린다
-
-```mermaid
-flowchart LR
-  g1[feature A] -- PR --> m2[main = prod]
-  g2[feature B] -- PR --> m2
-  g1 -. 수동으로 올려 확인 .-> st[[staging 서버]]
-  style m2 fill:#ecfdf5,stroke:#10b981
-  style st fill:#fff7ed,stroke:#fb923c
-```
+![예전: staging 브랜치에 쌓아서 한꺼번에 / 지금: PR 하나씩 main 으로](images/branching-before-after.svg)
 
 **바꾼 이유** — 예전에는 staging 서버를 쓰려면 반드시 `staging` 브랜치에 합류해야 했다. 합류하는 순간 남의 작업과 한 묶음이 돼서, 한 사람의 검증이 늦어지면 다른 사람의 배포도 prod 에 못 나갔다 (2026-11-03 실제 발생: 5건이 묶여 급한 수정 1건이 막힘). "staging 브랜치"와 "staging 서버"를 분리해 이 묶임을 구조적으로 없앴다.
 

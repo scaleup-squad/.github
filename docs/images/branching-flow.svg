@@ -62,7 +62,7 @@
     <circle cx="380" cy="150" r="13" fill="#2563eb" opacity="0">
       <animate attributeName="opacity" values="0;0;0.25;0.25;0;0" keyTimes="0;0.26;0.27;0.37;0.38;1" dur="10s" repeatCount="indefinite"/>
     </circle>
-    <text x="398" y="138" class="step" style="fill:#10b981" opacity="0">✓
+    <text x="404" y="126" class="step" style="fill:#10b981" opacity="0">✓
       <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.34;0.35;0.97;1" dur="10s" repeatCount="indefinite"/>
     </text>
   </g>
@@ -71,7 +71,7 @@
     <text x="505" y="155" text-anchor="middle" class="step" style="fill:#f97316">3</text>
     <text x="505" y="186" text-anchor="middle" class="step">staging 에서 확인</text>
     <text x="505" y="203" text-anchor="middle" class="sub">수동 실행으로 올림</text>
-    <text x="523" y="138" class="step" style="fill:#10b981" opacity="0">✓
+    <text x="529" y="126" class="step" style="fill:#10b981" opacity="0">✓
       <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.59;0.6;0.97;1" dur="10s" repeatCount="indefinite"/>
     </text>
   </g>
@@ -87,7 +87,7 @@
 
   <!-- the PR token -->
   <g>
-    <circle r="10" fill="#2563eb" stroke="#ffffff" stroke-width="3">
+    <circle r="19" fill="none" stroke="#2563eb" stroke-width="4" opacity="0.85">
       <animateMotion dur="10s" repeatCount="indefinite" calcMode="linear"
         path="M130,240 C160,240 160,150 190,150 L620,150 C650,150 670,240 700,240 L800,240"
         keyPoints="0;0.256;0.256;0.406;0.406;0.556;0.556;0.706;0.706;1;1"
